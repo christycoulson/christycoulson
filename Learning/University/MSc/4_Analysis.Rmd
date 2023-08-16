@@ -1,0 +1,469 @@
+---
+title: "Analysis"
+author: "Christy Coulson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(shapviz)
+library(ggrepel)
+library(ggthemes)
+library(rstatix)
+library(ggpubr)
+library(cowplot)
+```
+
+# Remove Superfluous Objects
+```{r}
+rm(data_1, data_2, data_3, data_4, data_5, data_6, data_7, data_8, data_9, data_10, data_11, data_12, data_13, data_14, data_15, data_16, ethnic_frag, GDP_gr, infant_mortality, internet_usage, life_expect, lit_rates, male_15_29, polity5, pop_density, pop_growth, test_matrix, test_x_nn, test_y_nn, train_matrix, train_x_nn, train_y_nn, ef_cc)
+```
+
+
+# Load relevant
+```{r}
+model_eval <- read.csv("../Data/Extracts/model_eval.csv")
+model_comparison <- read.csv("../Data/Extracts/model_comparison.csv")
+mod_info <- read.csv("../Data/Final/mod_info.csv")
+mod_info_t <- read.csv("../Data/Final/mod_info_2.csv")
+
+obs_of_int <- read.csv("../Data/Final/obs_of_int.csv") %>%
+  cbind(obs_descr_of_int[2:6,1:2]) %>%
+  cbind(preds_of_int[2:6]) %>%
+  rename(pred_prob = "preds_of_int[2:6]",
+         index = X)
+
+shaps_of_int <- read.csv("../Data/Final/Shaps_of_interest.csv")
+
+logreg_coefs <- read.csv("../Data/Final/Coefficients.csv") %>% rename(feature = X,coefficient = x) 
+
+mod_vi <- read.csv("../Data/Final/RF_VImp.csv")
+
+shaps_final <- read.csv("../Data/Final/Shapley_values.csv") %>% select(-X)
+
+counterfactuals <- read.csv("../Data/Final/Counterfactuals.csv")
+
+```
+
+
+# Additional Data Transformation
+```{r}
+# Function to add ranking column based on magnitude
+add_ranking <- function(df, column_name) {
+  ranked_column <- paste0(column_name, "_Rank")
+  df[ranked_column] <- rank(-abs(df[[column_name]]), ties.method = "max")
+  return(df)
+}
+
+# List of column names to rank
+columns_to_rank <- c("Log_Reg_Coefs", "Mean_Decrease_in_Impurity", "Mean_Shapley", "Log_Reg_Coefs_Exp")
+
+# Add ranking columns for each specified column
+for (column_name in columns_to_rank) {
+  mod_info_t <- add_ranking(mod_info_t, column_name)
+}
+
+mod_info_t$Concept <- c("Terrain",
+                        "Level of Democracy", "Level of Democracy", "Level of Democracy",
+                        "Political Instability",
+                        "Regime Characteristics","Regime Characteristics","Regime Characteristics","Regime Characteristics","Regime Characteristics","Regime Characteristics",
+                        "Political Instability",
+                        "Economics",
+                        "Ethnicity",
+                        "Health",
+                        "Population","Population","Population",
+                        "Technology",
+                        "Health",
+                        "Conflict Temporal","Conflict Temporal","Conflict Temporal","Conflict Temporal","Conflict Temporal",
+                        "Regional Characteristics", "Regional Characteristics", "Regional Characteristics", "Regional Characteristics", "Regional Characteristics")
+
+cors <- cor(mod_info_t[,2:6])
+```
+
+# Model Performance
+```{r}
+model_comparison[3,5] - model_comparison[1,5] # F1-score disparity
+```
+
+# Features & SHAP
+```{r}
+for (feature in expl_variables) {
+  print(ggplot() +
+  geom_point(aes(x = data_final[, feature], y = shaps_final[, feature])) +
+  ggtitle(paste("Joint Distribution of", feature, "and SHAP values")))
+}
+
+# GDP GROWTH
+ggplot() +
+  geom_point(aes(x = data_final$gdp_growth, y = shaps_final$gdp_growth)) +
+  labs(title = "Joint Distribution of Feature Values vs. SHAP values for YoY GDP Growth %",
+       subtitle = "The nonlinearity of this relationship is evident") +
+  xlab("Feature Value") +
+  ylab("SHAP value") +
+  theme_few()
+
+# DURABLE
+ggplot() +
+  geom_point(aes(x = data_final$durable, y = shaps_final$durable)) +
+  labs(title = "Joint Distribution of Feature Values vs. SHAP values for Length of Polity") +
+  xlab("Feature Value") +
+  ylab("SHAP value") +
+  theme_few()
+
+# MALE_15_29_PCT
+ggplot() +
+  geom_point(aes(x = data_final$male_15_29_pct, y = shaps_final$male_15_29_pct)) +
+  labs(title = "Joint Distribution of Feature Values vs. SHAP values for % of population that are male and between 15-29 years old") +
+  xlab("Feature Value") +
+  ylab("SHAP value") +
+  theme_few() +
+  theme(plot.title = element_text(size = 9)) 
+
+ggplot() +
+  geom_point(aes(x = data_final$last_conf_2_yr, y = shaps_final$last_conf_2_yr)) +
+  labs(title = "Joint Distribution of Feature Values vs. SHAP values for last_conf_2_yrs",
+       subtitle = "Positive Class always contributes to an increase in predicted probability") +
+  xlab("Feature Value") +
+  ylab("SHAP value") +
+  theme_few()
+
+ggplot() +
+  geom_point(aes(x = data_final$neighbour_at_war, y = shaps_final$neighbour_at_war)) +
+  labs(title = "Joint Distribution of Feature Values vs. SHAP values for neighbour_at_war") +
+  xlab("Feature Value") +
+  ylab("SHAP value") +
+  theme_few()
+```
+
+
+# Plot SHAP
+```{r}
+# Visualise with Shapviz
+# "The average contribution that a single member of a coalition makes to the final value for any one observation."
+
+shaps_viz <- shapviz(object = as.matrix(shaps_final),
+                     X = as.matrix(data_x)
+                     )
+
+################ Full Model Visualisation
+
+# Full Shapley Summary Plot
+sv_importance(shaps_viz, kind = "beeswarm", alpha = 0.2)
+sv_importance(shaps_viz, kind = "bar", alpha = 1)
+
+# Dependence Plots
+
+# neighbour at war
+sv_dependence(shaps_viz, 
+              v = "neighbour_at_war", 
+              color_var = "auto")
+
+# conflict in last 2 years 
+sv_dependence(shaps_viz, 
+              v = "last_conf_2_yr", 
+              color_var = "auto")
+
+# EFindex
+sv_dependence(shaps_viz, 
+              v = "polity", 
+              color_var = "auto")
+
+
+############## Single Observation Visualisation
+# Same observations as Counterfactuals
+
+# Spain 1985 
+sv_waterfall(shaps_viz, row_id = 1865)
+sv_force(shaps_viz, row_id = 1865)
+
+# Niger 1993
+sv_waterfall(shaps_viz, row_id = 3628)
+sv_force(shaps_viz, row_id = 3628)
+
+# Lebanon 2016 
+sv_waterfall(shaps_viz, row_id = 6062)
+sv_force(shaps_viz, row_id = 6062)
+
+# Senegal 1993 
+sv_waterfall(shaps_viz, row_id = 3462)
+sv_force(shaps_viz, row_id = 3462)
+
+# Chad 1986 
+sv_waterfall(shaps_viz, row_id = 4292)
+sv_force(shaps_viz, row_id = 4292)
+
+# Sri Lanka 2003
+sv_waterfall(shaps_viz, row_id = 7325)
+sv_force(shaps_viz, row_id = 7325)
+```
+
+
+# Check Correlations and Rankings
+```{r}
+cors
+```
+
+
+# Compare Coefficients and Mean Shapley
+```{r}
+my_colours <- c("#8DD3C7", "#00CC00", "#CC9900", "#984EA3", "#FF7F00", 
+               "#FFFF33", "#A65628", "#F781BF", "#999999", "#E41A1C", "#377EB8")
+
+concept_colors <- setNames(my_colours, unique(mod_info_t$Concept))
+############################################################### Magnitude 
+
+cor(mod_info_t$Log_Reg_Coefs, mod_info_t$Mean_Shapley)
+cor(mod_info_t$Log_Reg_Coefs, mod_info_t$Mean_Shapley, method = "spearman")
+cor(mod_info_t$Log_Reg_Coefs_Rank, mod_info_t$Mean_Shapley_Rank)
+
+cor(mod_info_t$Log_Reg_Coefs_Exp, mod_info_t$Mean_Shapley)
+cor(mod_info_t$Log_Reg_Coefs_Exp_Rank, mod_info_t$Mean_Shapley_Rank)
+
+mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Log_Reg_Coefs_Rank - mod_info_t$Mean_Shapley_Rank) %>%
+  select(X, rank_diff)
+
+ggqqplot(mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Log_Reg_Coefs_Rank - mod_info_t$Mean_Shapley_Rank) , x = "rank_diff", facet.by = "Concept")
+
+############################################################### Rank
+
+# Rank Differentials by Concept
+mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Log_Reg_Coefs_Rank - mod_info_t$Mean_Shapley_Rank) %>%
+  group_by(Concept) %>%
+  summarise(avg_rank_diff = mean(rank_diff)) %>%
+  arrange(desc(avg_rank_diff))
+
+# Log Odds
+ggplot(data = mod_info_t, 
+       aes(x = Log_Reg_Coefs_Rank, y = Mean_Shapley_Rank, colour = Concept)) +
+  geom_point() +
+  geom_abline(intercept = 0, 
+              slope = 1, 
+              colour = "red") +
+  geom_text_repel(aes(label = X,
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+#  scale_colour_brewer(palette = "Spectral") +
+  labs(title = "Coefficient vs. Mean Shapley: Absolute Value Rank") +
+  xlab("Coefficient Rank (Absolute)") +
+  ylab("Mean Shapley Rank (Absolute)") +
+  theme_few() 
+
+# Exponentiated
+ggplot(data = mod_info_t, 
+       aes(x = Log_Reg_Coefs_Exp_Rank, y = Mean_Shapley_Rank, colour = Concept)) +
+  geom_point() +
+  geom_abline(intercept = 0, 
+              slope = 1, 
+              colour = "red") +
+  geom_text_repel(aes(label = X,
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+  labs(title = "Exponentiated Coefficient vs. Mean Shapley: Absolute Value Rank") +
+  xlab("Exponentiated Coefficient Rank (Absolute)") +
+  ylab("Mean Shapley Rank (Absolute)") +
+  theme_few() 
+
+# Value
+ggplot(data = mod_info_t, 
+       aes(x = Log_Reg_Coefs, y = Mean_Shapley, colour = Concept)) +
+  geom_point() +
+  geom_text_repel(aes(label = X,
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+  labs(title = "Coefficients vs. Mean Shapley") +
+  xlab("Coefficient") +
+  ylab("Mean Shapley") +
+  theme_few() 
+
+ggplot(data = mod_info_t, 
+       aes(x = Log_Reg_Coefs_Exp, y = Mean_Shapley, colour = Concept)) +
+  geom_point() +
+  geom_jitter() +
+  geom_text_repel(aes(label = X,
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+  labs(title = "Exponentiated Coefficients vs. Mean Shapley") +
+  xlab("Exponentiated Coefficient") +
+  ylab("Mean Shapley") +
+  theme_few() 
+
+# Sign
+
+
+# remember exp coefs need to be less than 1 to be negative. They will never be less than 0! 
+
+check_sign_and_values <- function(x, y) {
+  if (x < 0) {
+    if (y < 1) {
+      return("Both negative. Signs are the same.")
+    } else {
+      return("X is negative, Y is positive. Signs are different")
+    }
+  } else if (x > 0) {
+    if (y >= 1) {
+      return("Both positive. Signs are the same.")
+    } else {
+      return("X is positive, Y is negative")
+    }
+  }
+}
+
+check_sign_and_values <- function(x, y) {
+  if (x < 0) {
+    if (y < 1) {
+      return("Both negative. Signs are the same.")
+    } else {
+      return("X is negative, Y is positive. Signs are different.")
+    }
+  } else if (x > 0) {
+    if (y >= 1) {
+      return("Both positive. Signs are the same.")
+    } else {
+      return("X is positive, Y is negative.")
+    }
+  }
+}
+
+mapply(check_sign_and_values, as.vector(mod_info_t$Mean_Shapley), as.vector(mod_info_t$Log_Reg_Coefs_Exp))
+
+# Very important for top features
+# Neighbour at war has a negative mean shap but positive values contribute a lot to prediction of cwo
+# So, is it negative just beause the values for a lot are 0 and thus negative?'
+# This is very misleading.
+
+# Both agree its an important variable by magnitude, but the sign is different.
+# But, when looking at shaps of interest we can see that its a POSITIVE contribution.
+
+
+table(data_final$neighbour_at_war)
+sum(data_final$neighbour_at_war == 1) / nrow(data_final)
+sum(data_final$neighbour_at_war == 0) / nrow(data_final)
+
+mean(shaps_final$neighbour_at_war[data_final$neighbour_at_war == 1]) # 0.02462115
+mean(shaps_final$neighbour_at_war[data_final$neighbour_at_war == 0]) # -0.01546421
+
+```
+
+
+# Compare Variable Importance with Mean SHAP
+```{r}
+  mod_info_t %>%
+  arrange(desc(Mean_Decrease_in_Impurity)) %>%
+  head(15) %>%
+  ggplot(aes(y = factor(X, levels = X[order(Mean_Decrease_in_Impurity)]),
+                              x = Mean_Decrease_in_Impurity)) +
+  geom_bar(aes(fill = Concept),
+           stat = "identity") +
+  scale_fill_manual(values = concept_colors) +
+  labs(title = "Gini Impurity Variable Importance") +
+  xlab("Mean Decrease in Impurity") +
+  ylab("Feature") +
+  theme_few() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+  
+  mod_info_t %>%
+  arrange(desc(abs(Mean_Shapley))) %>%
+  head(15) %>%
+  ggplot(aes(y = factor(X, levels = X[order(abs(Mean_Shapley))]),
+                              x = abs(Mean_Shapley))) +
+  geom_bar(aes(fill = Concept),
+           stat = "identity") +
+  scale_fill_manual(values = concept_colors) +
+  labs(title = "Absolute Mean SHAP per Feature") +
+  xlab("Absolute Mean SHAP") +
+  ylab("Feature") +
+  theme_few() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()) 
+
+# Magnitude 
+
+cor(mod_info_t$Mean_Decrease_in_Impurity, abs(mod_info_t$Mean_Shapley))
+cor(mod_info_t$Mean_Decrease_in_Impurity, abs(mod_info_t$Mean_Shapley), method = "spearman")
+cor(mod_info_t$Mean_Decrease_in_Impurity_Rank, mod_info_t$Mean_Shapley_Rank)
+
+mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Log_Reg_Coefs_Rank - mod_info_t$Mean_Shapley_Rank) %>%
+  select(X, rank_diff)
+
+# Rank
+ggplot(data = mod_info_t, 
+       aes(x = Mean_Decrease_in_Impurity_Rank, y = Mean_Shapley_Rank, colour = Concept)) +
+  geom_point() +
+  geom_abline(intercept = 0, 
+              slope = 1, 
+              colour = "red") +
+  geom_text_repel(aes(label = X
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+  labs(title = "Mean Decrease in Impurity vs. Mean Shapley: Absolute Value Rank",
+       subtitle = "") +
+  xlab("Mean Decrease in Impurity (Absolute)") +
+  ylab("Mean Shapley Rank (Absolute)") +
+  theme_few() 
+
+# Value
+ggplot(data = mod_info_t, 
+       aes(x = Mean_Decrease_in_Impurity, y = Mean_Shapley, colour = Concept)) +
+  geom_point() +
+  geom_text_repel(aes(label = X
+                  )) +
+  scale_colour_manual(values = concept_colors) +
+  labs(title = "Mean Decrease in Impurity vs. Mean Shapley",
+       subtitle = "") +
+  xlab("Mean Decrease in Impurity") +
+  ylab("Mean Shapley Rank") +
+  theme_few() 
+
+mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Mean_Decrease_in_Impurity_Rank - mod_info_t$Mean_Shapley_Rank) %>%
+  select(X, rank_diff)
+
+mod_info_t %>% 
+  dplyr::mutate(rank_diff = mod_info_t$Mean_Decrease_in_Impurity_Rank - mod_info_t$Mean_Shapley_Rank) %>%
+  group_by(Concept) %>%
+  summarise(avg_rank_diff = mean(rank_diff)) %>%
+  arrange(desc(avg_rank_diff))
+
+```
+
+
+# Compare Counterfactuals & SHAP
+```{r}
+total_preds <- predict(final_model, data_x)$predictions[,2]
+mean(total_preds) # average predicting = 0.03250721
+exp(mean(total_preds)) # exp() - 1.033041
+format(sum(mod_info_t$Mean_Shapley), scientific = FALSE)
+
+shaps_final[data_final$last_conf_2_yr == 1,] %>% view()
+
+counterfactuals %>%
+  group_by(country_year) %>%
+  summarise(num_cfacts = n())
+
+moc_classif$plot_statistics()
+
+cfact_niger_1993$plot_freq_of_feature_changes()
+0.459 + mean(total_preds)
+
+cfact_lebanon_2016$plot_freq_of_feature_changes()
+0.711  + mean(total_preds)
+
+cfact_senegal_1993$plot_freq_of_feature_changes()
+0.527 + mean(total_preds)
+sort(abs(shaps_of_int[4,3:32]))
+
+cfact_chad_1986$plot_freq_of_feature_changes()
+0.0655 + mean(total_preds)
+hist(data_final$gdp_growth)
+
+cfact_srilanka_2003$plot_freq_of_feature_changes()
+0.189 + mean(total_preds)
+
+```

@@ -1,0 +1,535 @@
+---
+title: "Methods"
+author: "Christy Coulson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fastshap)
+# install.packages("remotes")
+# remotes::install_github("ModelOriented/treeshap")
+library(shapviz)
+library(broom)
+```
+
+# Check Data
+```{r}
+data_final <- cbind(data_x, data_y)
+
+data_final <- data_final %>%
+  rename(newconf = data_y)
+
+compare_models <- c()
+compare_accuracies <- c()
+compare_bal_accuracies <- c()
+compare_F1 <- c()
+compare_specificities <- c()
+compare_sensitivities <- c()
+compare_kappas <- c()
+compare_precisions <- c()
+compare_recalls <- c()
+```
+
+# Logistic Regression
+
+```{r}
+set.seed(100)
+
+num_folds <- 10
+
+folds <- createFolds(train_y, k = num_folds)
+
+ctrl <- trainControl(method = "cv", index = folds)
+
+# log_reg_hs <- caret::train(train_x, train_y, method = "glm", family = "binomial", trControl = ctrl)
+
+# saveRDS(log_reg_hs, "../Models/log_reg_mod.rds")
+
+log_reg_hs <- readRDS("../Models/log_reg_mod.rds")
+
+summary(log_reg_hs)
+
+# Accuracy Evaluation 
+
+test_preds_log <- predict(log_reg_hs, test_x)
+
+confusionMatrix(test_preds_log, test_y, positive = "1", mode = "everything")
+
+logreg_test_acc <- caret::postResample(pred = test_preds_log, obs = test_y)[1]
+logreg_test_bal_acc <- caret::confusionMatrix(test_preds_log, test_y, positive = "1")$byClass[11]
+logreg_test_F1 <- caret::confusionMatrix(test_preds_log, test_y, positive = "1", mode = "everything")$byClass[7]
+logreg_test_specif <- caret::confusionMatrix(test_preds_log, test_y, positive = "1")$byClass[2]
+logreg_test_sensit <- caret::confusionMatrix(test_preds_log, test_y, positive = "1")$byClass[1]
+logreg_test_kap <- caret::postResample(pred = test_preds_log, obs = test_y)[2]
+logreg_test_precis <- confusionMatrix(test_preds_log, test_y, positive = "1", mode = "everything")$byClass[5]
+logreg_test_recall <- confusionMatrix(test_preds_log, test_y, positive = "1", mode = "everything")$byClass[6]
+
+compare_models <- c(compare_models, "LogisticRegression")
+compare_accuracies <- c(compare_accuracies, logreg_test_acc)
+compare_bal_accuracies <- c(compare_bal_accuracies, logreg_test_bal_acc)
+compare_F1 <- c(compare_F1, logreg_test_F1)
+compare_specificities <- c(compare_specificities, logreg_test_specif)
+compare_sensitivities <- c(compare_sensitivities, logreg_test_sensit)
+compare_kappas <- c(compare_kappas, logreg_test_kap)
+compare_precisions <- c(compare_precisions, logreg_test_precis)
+compare_recalls <- c(compare_recalls, logreg_test_recall)
+
+model_comparison <- c(compare_models, compare_accuracies, compare_bal_accuracies, compare_F1, compare_specificities, compare_sensitivities, compare_kappas, compare_precisions, compare_recalls) %>% as.data.frame()
+
+# Coefficients
+
+logreg_coefs <- log_reg_hs$finalModel$coefficients %>% as.vector()
+
+names(logreg_coefs) <- c("intercept",expl_variables)
+
+logreg_coefs[5] <- 0
+
+# write.csv(logreg_coefs, "../Data/Final/Coefficients.csv")
+```
+
+# Random Forest & Variable Importance
+```{r}
+
+control <- trainControl(method = "cv",
+                        number = 10,
+                       search = 'random',
+                       p = 0.7
+                        )
+
+# rf_hyp_tuning <-  caret::train(x = train_x,
+#                        y = train_y,
+#                        method = 'ranger',
+#                        tuneLength = 100,
+#                        trControl = control,
+#                        )
+
+
+rf_ms_perm <- ranger(x = train_x,
+                    y = train_y,
+                    mtry = 6,
+                    splitrule = "gini",
+                    min.node.size = 2,
+                    num.trees = 500,
+                    probability = TRUE,
+                    importance = "permutation"
+                   )
+
+
+rf_ms_imp <- ranger(x = train_x,
+                    y = train_y,
+                    mtry = 3,
+                    splitrule = "gini",
+                    min.node.size = 4,
+                    num.trees = 500,
+                    probability = TRUE,
+                    importance = "impurity"
+                   )
+
+# saveRDS(rf_ms_perm, "../Models/rf_comp_perm.rds")
+# saveRDS(rf_ms_imp, "../Models/rf_comp_imp.rds")
+
+test_preds_rf_ms <- predict(rf_ms_perm, test_x)$predictions[,2]
+test_preds_rf_ms_class <- as.factor(ifelse(test_preds_rf_ms > 0.5, 1, 0))
+
+confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1", mode = "everything")
+
+rf_ms_test_acc <- caret::postResample(pred = test_preds_rf_ms_class, obs = test_y)[1]
+rf_ms_test_bal_acc <- caret::confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1")$byClass[11]
+rf_ms_test_F1 <- caret::confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1", mode = "everything")$byClass[7]
+rf_ms_test_specif <- caret::confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1")$byClass[2]
+rf_ms_test_sensit <- caret::confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1")$byClass[1]
+rf_ms_test_kap <- caret::postResample(pred = test_preds_rf_ms_class, obs = test_y)[2]
+rf_ms_test_precis <- confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1", mode = "everything")$byClass[5]
+rf_ms_test_recall <- confusionMatrix(test_preds_rf_ms_class, test_y, positive = "1", mode = "everything")$byClass[6]
+
+compare_models <- c(compare_models, "RandomForest_MS")
+compare_accuracies <- c(compare_accuracies, rf_ms_test_acc)
+compare_bal_accuracies <- c(compare_bal_accuracies, rf_ms_test_bal_acc)
+compare_F1 <- c(compare_F1, rf_ms_test_F1)
+compare_specificities <- c(compare_specificities, rf_ms_test_specif)
+compare_sensitivities <- c(compare_sensitivities, rf_ms_test_sensit)
+compare_kappas <- c(compare_kappas, rf_ms_test_kap)
+compare_precisions <- c(compare_precisions, rf_ms_test_precis)
+compare_recalls <- c(compare_recalls, rf_ms_test_recall)
+
+model_comparison <- cbind(compare_models, compare_accuracies, compare_bal_accuracies, compare_F1, compare_specificities, compare_sensitivities, compare_kappas, compare_precisions, compare_recalls)
+
+# Variable Importance 
+
+mod_vi_perm <- rf_ms_perm$variable.importance
+mod_vi_imp <- rf_ms_imp$variable.importance
+
+mod_vi <- rbind(mod_vi_perm, mod_vi_imp)
+
+# write.csv(mod_vi, "../Data/Final/RF_VImp.csv")
+```
+
+
+# Add Final Model
+```{r}
+final_mod_preds <- predict(final_model, data_x)$predictions[,2]
+
+model_comparison <- rbind(model_comparison, final_mod_eval)
+
+rownames(model_comparison) <- c("logisticregression","randomforest_ms","randomforest_cc")
+
+# write.csv(model_comparison, "../Data/Extracts/model_comparison.csv")
+```
+
+# View Items 
+```{r}
+mod_vi # Variable Importance from 2 RF models
+logreg_coefs # Coefficients from Logistic Regression
+model_comparison # General Model Evaluation Comparisons
+
+rbind(logreg_coefs[2:31], mod_vi)
+```
+
+# Shapley Values
+
+__Random Forest__
+```{r}
+
+# pfun_rf <- function(object, newdata) {  # computes prob(newconf=1|x)
+#   predict(object, data = newdata)$predictions[, 2]
+# }
+
+# shaps_final <- explain(object = final_model,
+#                    X = data_x,
+#                    nsim = 100,
+#                    adjust = TRUE,
+#                    pred_wrapper = pfun_rf)
+
+# write.csv(shaps_final, "../Data/Final/Shapley_values.csv")
+
+shaps_final <- read.csv("../Data/Final/Shapley_values.csv") %>%
+  select(-X)
+
+mean_shaps <- colMeans(shaps_final)
+
+format(mean_shaps, scientific = FALSE) # representation in non-scientific notation 
+
+paste("The minimum Shapley value is", min(shaps_final), 
+      "for country-year", 
+      obs_descr[which(shaps_final == min(shaps_final), arr.ind = TRUE)[1,1],1:2],
+      "and feature", 
+      names(data_x)[which(shaps_final == min(shaps_final), arr.ind = TRUE)[1,2]])
+
+paste("The maximum (and maximum absolute) Shapley value is", max(shaps_final), 
+      "for country-year", 
+      obs_descr[which(shaps_final == max(shaps_final), arr.ind = TRUE)[1,1],1:2],
+      "and feature", 
+      names(data_x)[which(shaps_final == max(shaps_final), arr.ind = TRUE)[1,2]])
+
+paste("The minimum absolute Shapley value is", min(abs(shaps_final)), 
+      "for country-year", 
+      obs_descr[which(shaps_final == min(abs(shaps_final)), arr.ind = TRUE)[1,1],1:2],
+      "and feature", 
+      names(data_x)[which(shaps_final == min(abs(shaps_final)), arr.ind = TRUE)[1,2]])
+
+paste("The average of all mean Shapley values per feature is", format(mean(mean_shaps), scientific = FALSE))
+
+
+```
+
+
+# Combine Outputs
+```{r}
+mod_info <- rbind(logreg_coefs[2:31], mod_vi, format(mean_shaps, scientific = FALSE)) 
+
+rownames(mod_info) <- c("Log_Reg_Coefs","Mean_Decrease_in_Accuracy","Mean_Decrease_in_Impurity","Mean_Shapley")
+
+mod_info
+
+# write.csv(mod_info, "../Data/Final/mod_info.csv")
+
+mod_info_t <- as.data.frame(t(mod_info))
+
+colnames(mod_info_t) <- mod_info_t[1, ]
+
+mod_info_t <- mod_info_t[-1, ]
+
+#mod_info_t <- mod_info_t %>%
+#  dplyr::mutate(Log_Reg_Coefs = as.numeric(Log_Reg_Coefs),
+#                Mean_Decrease_in_Accuracy = as.numeric(Mean_Decrease_in_Accuracy),
+#                Mean_Decrease_in_Impurity = as.numeric(Mean_Decrease_in_Impurity),
+#                Mean_Shapley = as.numeric(Mean_Shapley),
+#                Log_Reg_Coefs_Exp = exp(as.numeric(Log_Reg_Coefs)))
+
+# write.csv(mod_info_t, "../Data/Final/mod_info_2.csv")
+
+# Now just observations of interest, based on prediction output from final model. 
+shaps_of_int <- rbind(shaps_final[1865,], # Correct
+                      shaps_final[3628,], # Correct
+                      shaps_final[6062,], # Correct
+                      shaps_final[3462,], # Correct
+                      shaps_final[4292,], # Correct
+                      shaps_final[7325,]) # Correct
+
+obs_descr_of_int <- rbind(obs_descr[1865,], # Correct
+                          obs_descr[3628,], # Correct
+                          obs_descr[6062,], # Correct
+                          obs_descr[3462,], # Correct
+                          obs_descr[4292,], # Correct
+                          obs_descr[7325,]) # Correct
+
+preds_of_int <- rbind(final_mod_preds[1865], # Correct
+                      final_mod_preds[3628], # Correct
+                      final_mod_preds[6062], # Correct
+                      final_mod_preds[3462], # Correct
+                      final_mod_preds[4292], # Correct
+                      final_mod_preds[7325]) # Correct
+
+shaps_of_int <- cbind(preds_of_int, shaps_of_int)
+
+shaps_of_int
+
+# write.csv(shaps_of_int, "../Data/Final/Shaps_of_interest.csv")
+```
+
+
+# Counterfactuals
+
+```{r}
+library(mosmafs)
+library(counterfactuals)
+library(iml)
+library(trtf)
+
+# Need to do this so it matches model! 
+data_final <- data_final %>%
+  rename(train_y = newconf)
+
+# Setting up an iml::Predictor() object
+# We then create an iml::Predictor object, which serves as a wrapper for different model types; it contains the model and the data for its analysis.
+
+predictor <- Predictor$new(final_model,
+                           type = "response")
+
+moc_classif <- MOCClassif$new(predictor,
+                              fixed_features = c("terr_rugg_ind", "durable","state_fail","last_conf_3_yr","last_conf_5_yr","last_conf_10_yr","last_conf_20_yr"),
+                              use_conditional_mutator = TRUE
+                              )
+#  https://search.r-project.org/CRAN/refmans/counterfactuals/html/MOCClassif.html#method-MOCClassif-new
+
+# Identify Observations of Interest
+mod_preds_desc <- cbind(final_mod_preds, obs_descr[,1:3])
+```
+
+```{r}
+# True Positives
+# Spain 1985 - Predicting civil war, but lowest civil war prediction (True positive, but uncertain)
+# Not of interest, as its a true positive 
+mod_preds_desc[1865,]
+predictor$predict(data_final[1865,]) # Correct
+
+
+# True Negatives
+# Niger 1993 - Predicting peace, but highest civil war prediction when there was one (True Negative, but uncertain)
+# of interest as it's a true negative but I'm interested in what would to be required to change to incorrectly predict civil war onset.
+mod_preds_desc[3628,]
+predictor$predict(data_final[3628,]) # Correct
+
+x_interest <- data_final[3628,]
+
+#cfact_niger_1993 <- moc_classif$find_counterfactuals(x_interest = x_interest,
+#                                             desired_class = "X1",
+#                                             desired_prob = c(0.5,1))
+
+
+#cfact_niger_1993 <- cbind(cfact_niger_1993$evaluate(), 
+#                         predict(final_model, cfact_niger_1993$evaluate()[,1:30])$predictions[,2]) %>%
+#                  filter(V2 > 0.5) %>%
+#                  filter(train_y == 1) %>%
+#                  rename(new_prob = "V2") 
+
+# False Positives 
+# Lebanon 2016 - Maximum prediction of civil war where there wasn't one (VERY incorrect false positive)
+# Pick this one, as we want to know what would make the model correctly predict peace.
+max(mod_preds_desc$final_mod_preds[mod_preds_desc$newconf == "0"])
+mod_preds_desc[6062,]
+predictor$predict(data_final[6062,]) # Correct
+
+x_interest <- data_final[6062,]
+
+#cfact_lebanon_2016 <- moc_classif$find_counterfactuals(x_interest = x_interest,
+#                                             desired_class = "X0",
+#                                             desired_prob = c(0.5,1))
+
+#cfact_lebanon_2016 <- cbind(cfact_lebanon_2016$evaluate(), 
+#                         predict(final_model, cfact_lebanon_2016$evaluate()[,1:30])$predictions[,2]) %>%
+#                  filter(V2 > 0.5) %>%
+#                  filter(train_y == 0) %>%
+#                 rename(new_prob = "V2")
+
+# False Positives #2
+# Senegal 1993 - Minimum prediction of civil war whilst still being incorrect in prediction of civil war
+mod_preds_desc[3462,]
+predictor$predict(data_final[3462,]) # Correct
+
+x_interest <- data_final[3462,]
+
+#cfact_senegal_1993 <- moc_classif$find_counterfactuals(x_interest = x_interest,
+#                                             desired_class = "X0",
+#                                             desired_prob = c(0.5,1))
+
+#cfact_senegal_1993 <- cbind(cfact_senegal_1993$evaluate(), 
+#                         predict(final_model, cfact_senegal_1993$evaluate()[,1:30])$predictions[,2]) %>%
+#                  filter(V2 > 0.5) %>%
+#                  filter(train_y == 0) %>%
+#                  rename(new_prob = "V2")
+
+
+# False Negatives
+# Chad 1986 - Minimum prediction of civil war where there was one (VERY incorrect false negative)
+# Pick this one, as we want to know what would make the model correctly predict civil war onset.
+min(mod_preds_desc$final_mod_preds[mod_preds_desc$newconf == "1"])
+mod_preds_desc[4292,]
+predictor$predict(data_final[4292,]) # Correct
+
+x_interest <- data_final[4292,]
+
+#cfact_chad_1986 <- moc_classif$find_counterfactuals(x_interest = x_interest,
+#                                             desired_class = "X1",
+#                                             desired_prob = c(0.5,1))
+
+
+#cfact_chad_1986 <- cbind(cfact_chad_1986$evaluate(), 
+#                         predict(final_model, cfact_chad_1986$evaluate()[,1:30])$predictions[,2]) %>%
+#                  filter(V2 > 0.5) %>%
+#                  filter(train_y == 1) %>%
+#                  rename(new_prob = "V2")
+
+# False Negative #2 
+# Sri Lanka 2003 -  Predicting peace, but highest civil war prediction where there was one (false negative, but close to being correct)
+# Pick this one, as we want to know what would make the model correctly predict civil war onset.
+mod_preds_desc[7325,]
+predictor$predict(data_final[7325,]) # Correct
+
+x_interest <- data_final[7325,]
+
+#cfact_srilanka_2003 <- moc_classif$find_counterfactuals(x_interest = x_interest,
+#                                             desired_class = "X1",
+#                                             desired_prob = c(0.5,1))
+
+# cfact_srilanka_2003 <- cbind(cfact_srilanka_2003$evaluate(), 
+#                         predict(final_model, cfact_srilanka_2003$evaluate()[,1:30])$predictions[,2]) %>%
+#                  filter(V2 > 0.5) %>%
+#                  filter(train_y == 1) %>%
+#                 rename(new_prob = "V2")
+
+```
+
+# Combine and Rescale Counterfactuals
+```{r}
+#cfact_niger_1993 <- cfact_niger_1993 %>%
+#  dplyr::mutate(country_year = "niger_1993")
+
+#cfact_lebanon_2016 <- cfact_lebanon_2016 %>%
+#  dplyr::mutate(country_year = "lebanon_2016")
+
+#cfact_senegal_1993 <- cfact_senegal_1993 %>%
+#  dplyr::mutate(country_year = "senegal_1993")
+
+#cfact_chad_1986 <- cfact_chad_1986 %>%
+# dplyr::mutate(country_year = "chad_1986")
+
+#cfact_srilanka_2003 <- cfact_srilanka_2003 %>%
+#  dplyr::mutate(country_year = "srilanka_2003")
+
+#counterfactuals <- rbind(cfact_niger_1993, cfact_lebanon_2016, cfact_senegal_1993, cfact_chad_1986, cfact_srilanka_2003)
+
+#counterfactuals <- as.data.frame(counterfactuals)
+
+# write.csv(counterfactuals, "../Data/Final/Counterfactuals.csv")
+
+```
+
+# Rescale for Substantive Interpretation
+```{r}
+# Rescale Counterfactuals
+
+# cols_to_scale <- cols_to_scale - 1
+# cols_to_scale
+
+
+# data_x_means_cfact <- c(data_x_means[1],
+#                        data_x_means[2],
+#                        data_x_means[3],
+#                        data_x_means[4],
+#                        data_x_means[5],
+#                        data_x_means[6],
+#                        data_x_means[7],
+#                        data_x_means[8],
+#                        data_x_means[9],
+#                        data_x_means[10],
+#                        data_x_means[11],
+#                        NA,
+#                        data_x_means[12],
+#                        data_x_means[13],
+#                        data_x_means[14],
+#                        data_x_means[15],
+#                       data_x_means[16],
+#                        data_x_means[17],
+#                        data_x_means[18],
+#                        data_x_means[19],
+#                        NA,NA,NA,NA,NA,
+#                        data_x_means[20],
+#                        data_x_means[21],
+#                        data_x_means[22],
+#                        data_x_means[23],
+#                        NA,NA,NA,NA,NA,NA,NA,NA,NA)
+
+#data_x_sds_cfact <- c(data_x_sds[1],
+#                      data_x_sds[2],
+#                      data_x_sds[3],
+#                      data_x_sds[4],
+#                      data_x_sds[5],
+#                      data_x_sds[6],
+#                      data_x_sds[7],
+#                      data_x_sds[8],
+#                      data_x_sds[9],
+#                      data_x_sds[10],
+#                      data_x_sds[11],
+#                      NA,
+#                      data_x_sds[12],
+#                      data_x_sds[13],
+#                     data_x_sds[14],
+#                      data_x_sds[15],
+#                     data_x_sds[16],
+#                      data_x_sds[17],
+#                      data_x_sds[18],
+#                      data_x_sds[19],
+#                      NA,NA,NA,NA,NA,
+#                      data_x_sds[20],
+#                      data_x_sds[21],
+#                      data_x_sds[22],
+#                      data_x_sds[23],
+#                      NA,NA,NA,NA,NA,NA,NA,NA,NA)
+
+#data_x_means_cfact
+
+#for (col_index in cols_to_scale) {
+#print(data_x_means_cfact[col_index])
+#print(data_x_sds_cfact[col_index])
+#counterfactuals[, col_index] <- (counterfactuals[, col_index] * data_x_sds_cfact[col_index]) +   data_x_means_cfact[col_index]
+#}
+
+# write.csv(counterfactuals, "../Data/Final/Counterfactuals.csv")
+```
+
+
+```{r}
+counterfactuals <- read.csv("../Data/Final/Counterfactuals.csv")
+
+cfact_obs_int <- rbind(data_19[3628,], data_19[6062,], data_19[3462,], data_19[4292,], data_19[7325,]) %>%
+  select(-polity2)
+
+# write.csv(cfact_obs_int, "../Data/Final/obs_of_int.csv")
+
+
+cfact_obs_int
+```
+

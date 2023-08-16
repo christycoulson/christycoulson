@@ -1,0 +1,589 @@
+---
+title: "Modelling"
+author: "Christy Coulson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Knn
+```{r}
+library(caret)
+set.seed(123)
+
+control <- trainControl(method = "cv",
+                        number = 10,
+                        search = 'grid'
+                        )
+
+# knn_grid_1 <- caret::train(x = train_x,
+#                        y = train_y,
+#                        method = 'knn',
+#                        trControl = control,
+#                        tuneGrid = data.frame(k = seq(5, 80, by = 3))
+#                        )
+
+# saveRDS(knn_grid_1, "../Models/knn_mod.rds")
+
+knn_grid_1 <- readRDS("../Models/knn_mod.rds")
+
+plot(knn_grid_1)
+
+train_preds_knn_1 <- predict(knn_grid_1, train_x)
+
+confusionMatrix(train_preds_knn_1, train_y)
+
+paste("The max CV Accuracy that my first Knn achieved was", max(knn_grid_1$results$Accuracy))
+
+paste("The value of K that maximises CV Accuracy in my first Knn model is", min(knn_grid_1$bestTune$k))
+
+test_preds_knn_1 <- predict(knn_grid_1, test_x)
+
+confusionMatrix(test_preds_knn_1, test_y, positive = "1", mode = "everything")
+
+knn_1_test_acc <- caret::postResample(pred = test_preds_knn_1, obs = test_y)[1]
+knn_1_test_bal_acc <- caret::confusionMatrix(test_preds_knn_1, test_y, positive = "1")$byClass[11]
+knn_1_test_F1 <- caret::confusionMatrix(test_preds_knn_1, test_y, positive = "1", mode = "everything")$byClass[7]
+knn_1_test_specif <- caret::confusionMatrix(test_preds_knn_1, test_y, positive = "1")$byClass[2]
+knn_1_test_sensit <- caret::confusionMatrix(test_preds_knn_1, test_y, positive = "1")$byClass[1]
+knn_1_test_kap <- caret::postResample(pred = test_preds_knn_1, obs = test_y)[2]
+
+paste("The test Accuracy for my first Knn model is", knn_1_test_acc)
+
+models <- ("kNN")
+max_accuracies <- c(knn_1_test_acc)
+max_bal_accuracies <- c(knn_1_test_bal_acc)
+max_kappas <- c(knn_1_test_kap)
+max_specificities <- c(knn_1_test_specif)
+max_sensitivities <- c(knn_1_test_sensit)
+max_F1 <- c(knn_1_test_F1)
+model_eval <- cbind(models, max_accuracies, max_bal_accuracies, max_F1, max_kappas, max_sensitivities, max_specificities)
+
+```
+
+
+# Support Vector Machine
+```{r}
+library(tidyverse)
+set.seed(123)
+
+control <- caret::trainControl(method = "cv",
+                        number = 10,
+                        search = 'random'
+                        )
+
+# svm_radial_rand_1 <- caret::train(x = train_x %>%
+#                                    mutate(state_fail = as.numeric(state_fail),
+#                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+#                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+#                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+#                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+#                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+#                                           neighbour_at_war = as.numeric(neighbour_at_war)),
+#                        y = train_y,
+#                        method = 'svmRadial',
+#                        trControl = control,
+#                        tuneLength = 100
+#                        )
+
+# saveRDS(svm_radial_rand_1, "../Models/svm_mod.rds")
+
+svm_radial_rand_1 <- readRDS("../Models/svm_mod.rds")
+
+train_preds_svm_1 <- predict(svm_radial_rand_1, train_x %>%
+                                    mutate(state_fail = as.numeric(state_fail),
+                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+                                           neighbour_at_war = as.numeric(neighbour_at_war)))
+
+# Train CM
+confusionMatrix(train_preds_svm_1, train_y)
+
+test_preds_svm_1 <- predict(svm_radial_rand_1, test_x %>%
+                                    mutate(state_fail = as.numeric(state_fail),
+                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+                                           neighbour_at_war = as.numeric(neighbour_at_war)))
+
+# Test CM
+confusionMatrix(test_preds_svm_1, test_y, positive = "1", mode = "everything")
+
+svm_1_test_acc <- caret::postResample(pred = test_preds_svm_1, obs = test_y)[1]
+svm_1_test_bal_acc <- caret::confusionMatrix(test_preds_svm_1, test_y, positive = "1")$byClass[11]
+svm_1_test_F1 <- caret::confusionMatrix(test_preds_svm_1, test_y, positive = "1", mode = "everything")$byClass[7]
+svm_1_test_specif <- caret::confusionMatrix(test_preds_svm_1, test_y, positive = "1")$byClass[2]
+svm_1_test_sensit <- caret::confusionMatrix(test_preds_svm_1, test_y, positive = "1")$byClass[1]
+svm_1_test_kap <- caret::postResample(pred = test_preds_svm_1, obs = test_y)[2]
+
+models <- c(models, "SVM")
+max_accuracies <- c(max_accuracies, svm_1_test_acc)
+max_bal_accuracies <- c(max_bal_accuracies, svm_1_test_bal_acc)
+max_F1 <- c(max_F1, svm_1_test_F1)
+max_specificities <- c(max_specificities, svm_1_test_specif)
+max_sensitivities <- c(max_sensitivities, svm_1_test_sensit)
+max_kappas <- c(max_kappas, svm_1_test_kap)
+
+
+model_eval <- cbind(models, max_accuracies, max_bal_accuracies, max_F1, max_kappas, max_sensitivities, max_specificities)
+
+paste("The max CV Accuracy that my first SVM achieved was", max(svm_radial_rand_1$results$Accuracy))
+
+paste("The sigma and Cost hyperparameter values that maximises my accuracy are", 
+      svm_radial_rand_1$bestTune$sigma, 
+      "and", 
+      svm_radial_rand_1$bestTune$C, "respectively.")
+
+paste("The test accuracy for my first SVM model is", svm_1_test_acc)
+```
+
+
+# Random Forest
+```{r}
+set.seed(123)
+
+control <- trainControl(method = "cv",
+                        number = 10,
+                        search = 'random',
+                        p = 0.7
+                        )
+
+# rf_rand_1 <- caret::train(x = train_x,
+#                         y = train_y,
+#                         method = 'ranger',
+#                         tuneLength = 100,
+#                         trControl = control,
+#                         )
+
+# saveRDS(rf_rand_1, "../Models/rf_mod.rds")
+
+rf_rand_1 <- readRDS("../Models/rf_mod.rds")
+
+plot(rf_rand_1)
+rf_rand_1$bestTune
+
+# Predict train
+train_preds_rf_1 <- predict(rf_rand_1, train_x)
+
+confusionMatrix(train_preds_rf_1, train_y)
+
+# Predict Test
+
+test_preds_rf_1 <- predict(rf_rand_1, test_x)
+
+# Evaluate 
+
+caret::confusionMatrix(test_preds_rf_1, test_y, positive = "1", mode = "everything")
+
+rf_1_test_acc <- caret::postResample(pred = test_preds_rf_1, obs = test_y)[1]
+rf_1_test_bal_acc <- caret::confusionMatrix(test_preds_rf_1, test_y, positive = "1")$byClass[11]
+rf_1_test_F1 <- caret::confusionMatrix(test_preds_rf_1, test_y, positive = "1", mode = "everything")$byClass[7]
+rf_1_test_specif <- caret::confusionMatrix(test_preds_rf_1, test_y, positive = "1")$byClass[2]
+rf_1_test_sensit <- caret::confusionMatrix(test_preds_rf_1, test_y, positive = "1")$byClass[1]
+rf_1_test_kap <- caret::postResample(pred = test_preds_rf_1, obs = test_y)[2]
+
+models <- c(models, "RandomForest")
+max_accuracies <- c(max_accuracies, rf_1_test_acc)
+max_bal_accuracies <- c(max_bal_accuracies, rf_1_test_bal_acc)
+max_F1 <- c(max_F1, rf_1_test_F1)
+max_specificities <- c(max_specificities, rf_1_test_specif)
+max_sensitivities <- c(max_sensitivities, rf_1_test_sensit)
+max_kappas <- c(max_kappas, rf_1_test_kap)
+
+model_eval <- cbind(models, max_accuracies, max_bal_accuracies, max_F1, max_kappas, max_sensitivities, max_specificities)
+
+paste("The max CV Accuracy that my first Random Forest achieved was", max(rf_rand_1$results$Accuracy))
+paste("The test accuracy for my first Random Forest model is", rf_1_test_acc)
+
+# Variable Importance
+
+# rf_rang <- ranger(x = train_x,
+#                  y = train_y,
+#                  num.trees = 500,
+#                  mtry = 7,
+#                  min.node.size = 3,
+#                  importance = "impurity")
+
+# ?ranger()
+
+# rf_varimp <- as.numeric(ranger::importance(rf_rang))
+
+#rf_varimp <- cbind(rf_varimp, names(train_x)) %>%
+#  as.data.frame()
+
+```
+
+
+# XGBoost
+```{r}
+set.seed(123)
+
+control <- trainControl(method = "cv",
+                        number = 10,
+                       search = 'random'
+                        )
+
+# xgb_rand_1 <- caret::train(x = train_x %>%
+#                                    mutate(state_fail = as.numeric(state_fail),
+#                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+#                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+#                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+#                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+#                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+#                                           neighbour_at_war = as.numeric(neighbour_at_war)),
+#                        y = train_y,
+#                        method = 'xgbTree',
+#                        tuneLength = 100,
+#                       trControl = control,
+#                       )
+
+
+# saveRDS(xgb_rand_1, "../Models/xgb_mod.rds")
+
+xgb_rand_1 <- readRDS("../Models/xgb_mod.rds")
+
+
+train_preds_xgb_1 <- predict(xgb_rand_1, train_x %>%
+                                    mutate(state_fail = as.numeric(state_fail),
+                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+                                           neighbour_at_war = as.numeric(neighbour_at_war)))
+
+confusionMatrix(train_preds_xgb_1, train_y)
+
+test_preds_xgb_1 <- predict(xgb_rand_1, test_x %>%
+                                    mutate(state_fail = as.numeric(state_fail),
+                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+                                           neighbour_at_war = as.numeric(neighbour_at_war)))
+
+confusionMatrix(test_preds_xgb_1, test_y, positive = "1", mode = "everything")
+confusionMatrix(test_preds_xgb_1, test_y, positive = "1", mode = "everything")$byClass
+
+
+xgb_1_test_acc <- caret::postResample(pred = test_preds_xgb_1, obs = test_y)[1]
+xgb_1_test_bal_acc <- caret::confusionMatrix(test_preds_xgb_1, test_y, positive = "1")$byClass[11]
+xgb_1_test_F1 <- caret::confusionMatrix(test_preds_xgb_1, test_y, positive = "1", mode = "everything")$byClass[7]
+xgb_1_test_specif <- caret::confusionMatrix(test_preds_xgb_1, test_y, positive = "1")$byClass[2]
+xgb_1_test_sensit <- caret::confusionMatrix(test_preds_xgb_1, test_y, positive = "1")$byClass[1]
+xgb_1_test_kap <- caret::postResample(pred = test_preds_xgb_1, obs = test_y)[2]
+
+models <- c(models, "XGBoost")
+max_accuracies <- c(max_accuracies, xgb_1_test_acc)
+max_bal_accuracies <- c(max_bal_accuracies, xgb_1_test_bal_acc)
+max_F1 <- c(max_F1, xgb_1_test_F1)
+max_specificities <- c(max_specificities, xgb_1_test_specif)
+max_sensitivities <- c(max_sensitivities, xgb_1_test_sensit)
+max_kappas <- c(max_kappas, xgb_1_test_kap)
+
+model_eval <- cbind(models, max_accuracies, max_bal_accuracies, max_F1, max_kappas, max_sensitivities, max_specificities)
+
+paste("The max CV Accuracy that my first XGBoost model achieved was", max(xgb_rand_1$results$Accuracy))
+paste("The test accuracy for my first XGBoost model is", xgb_1_test_acc)
+
+```
+
+
+# Neural Network w/ Tensorflow & Keras
+
+
+__Model Selection: Hyperparameter Tuning__
+```{r}
+ library(keras)
+ library(tensorflow)
+ library(tidyverse)
+ library(reticulate)
+
+ reticulate::use_condaenv("/opt/homebrew/Caskroom/miniforge/base/envs/tf/bin/python")
+
+    # TRAIN
+ train_matrix <- as.matrix(sapply(train, as.numeric))
+ expl_variables <- dimnames(train_x)[[2]]
+ dimnames(train_matrix) <- NULL
+# create features for neural net
+ train_x_nn <- train_matrix[,1:30]
+# create target for neural net
+ train_y_nn <- as.matrix(train_matrix[,31]) - 1
+ train_y_nn <- to_categorical(train_matrix[,31] -1, 2)
+
+    # TEST 
+ test_matrix <- as.matrix(sapply(test, as.numeric))
+ dimnames(test_matrix) <- NULL
+#  create features for neural net
+ test_x_nn <- test_matrix[,1:30]
+# create target for neural net
+ test_y_nn <- to_categorical(test_matrix[,31] -1, 2)
+
+
+    # Hyperparameter Specification
+
+units_1 <- c(22,26,30) # optimise units per hidden layer 1 
+# units_1 <- c(16, 30) # optimise units per hidden layer 1 
+units_2 <- c(12,18,22) # optimise units per hidden layer 2
+# units_2 <- c(12, 26) # optimise units per hidden layer 2
+units_3 <- c(4, 8) # optimise units per hidden layer 3 
+# units_3 <- (4, 12) # optimise units per hidden layer 3 
+dropouts_1 <- 0.5 # optimise dropout per hidden layer 1
+# dropouts_1 <- c(0.3, 0.4) # optimise dropout per hidden layer 1
+# dropouts_2 <- 0.5 # optimise dropout per hidden layer 2
+# dropouts_2 <- c(0.3, 0.4) # optimise dropout per hidden layer 2
+batch_sizes <- 64 # optimise batch_size 
+
+# 3*3*2 = 18
+
+# Define Model
+# nn_model <- keras_model_sequential() 
+
+# neural_net_tuning <- data.frame() 
+
+    # Hyperparameter Tuning
+
+# for (u_1 in units_1) {
+#   for (u_2 in units_2) {
+#     for (u_3 in units_3) {
+
+# tuning_info <- c()
+     
+            # Define NN architecture       
+# nn_model %>%
+# layer_dense(units = 30, activation = "relu", input_shape = ncol(train_x_nn)) %>% # input
+# layer_dense(units = u_1, activation = "relu") %>% # first hidden layer
+# layer_dropout(rate = dropouts_1) %>% # first dropout
+# layer_dense(units = u_2, activation = "relu") %>% # second hidden layer
+# layer_dense(units = u_3, activation = "relu") %>% # third hidden layer 
+# layer_dense(units = 2, activation = "sigmoid") # output
+
+            # Compile
+# nn_model %>% compile(
+# loss = "binary_crossentropy",
+# optimizer = "adam",
+# metrics = c("accuracy")
+# )
+
+            # Train Model
+# nn_model_trained <- nn_model %>% fit(
+#   x = train_x_nn,
+#   y = train_y_nn,
+#   epochs = 100, 
+#   batch_size = batch_sizes, 
+#  validation_split = 0.2 
+# )
+
+# nn_mod_eval <- nn_model %>% tensorflow::evaluate(
+#   x = test_x_nn, 
+#   y = test_y_nn,
+#   verbose = 1
+# )
+
+# nn_test_preds <- predict(nn_model, test_x_nn)
+# nn_test_preds <- as.factor(max.col(nn_test_preds, ties.method = "first") - 1) # get in format for confusionmatrix
+# table(nn_test_preds)
+
+# nnet_test_acc <- caret::postResample(pred = nn_test_preds, obs = test_y)[1]
+# nnet_test_bal_acc <- caret::confusionMatrix(nn_test_preds, test_y)$byClass[11]
+# nnet_test_specif <- caret::confusionMatrix(nn_test_preds, test_y)$byClass[2]
+# nnet_test_sensit <- caret::confusionMatrix(nn_test_preds, test_y)$byClass[1]
+# nnet_test_kap <- caret::postResample(pred = nn_test_preds, obs = test_y)[2] 
+
+# tuning_info <- c(u_1, u_2, u_3, nnet_test_acc, nnet_test_bal_acc, nnet_test_specif, nnet_test_sensit, nnet_test_kap)
+  
+# neural_net_tuning <- rbind(neural_net_tuning, tuning_info)
+#             print("Neural Net Information Added.")
+#           }
+#         }
+#       }
+
+# neural_net_tuning <- neural_net_tuning %>%
+#   rename(neurons_1 = X22,
+#          neurons_2 = X12,
+#         neurons_3 = X4)
+
+#names(neural_net_tuning)
+
+# neural_net_tuning <- neural_net_tuning %>%
+#  rename(test_acc ="X0.987211018199705",
+#          test_bal_acc ="X0.876272370144042",
+#          test_specif ="X0.758620689655172",
+#         test_sensit ="X0.993924050632911",
+#          test_kappa ="X0.765352960500032")
+
+# write.csv(neural_net_tuning, "../Data/Extracts/nn_hyppar_tun")
+
+neural_net_tuning <- read.csv("../Data/Extracts/nn_hyppar_tun")
+
+which.max(neural_net_tuning$test_bal_acc)
+paste("The optimum hyperparmeter values are", neural_net_tuning[which.max(neural_net_tuning$test_bal_acc),])
+
+```
+
+__Final Neural Network Model__
+```{r}
+library(keras)
+library(tensorflow)
+library(tidyverse)
+library(reticulate)
+
+# reticulate::use_condaenv("/opt/homebrew/Caskroom/miniforge/base/envs/tf/bin/python")
+
+    # TRAIN
+# train_matrix <- as.matrix(sapply(train, as.numeric))
+# expl_variables <- dimnames(train_x)[[2]]
+# dimnames(train_matrix) <- NULL
+# create features for neural net
+# train_x_nn <- train_matrix[,1:30]
+# create target for neural net
+# train_y_nn <- as.matrix(train_matrix[,31]) - 1
+# train_y_nn <- to_categorical(train_matrix[,31] -1, 2)
+
+    # TEST 
+# test_matrix <- as.matrix(sapply(test, as.numeric))
+# dimnames(test_matrix) <- NULL
+# create features for neural net
+# test_x_nn <- test_matrix[,1:30]
+# create target for neural net
+# test_y_nn  <- to_categorical(test_matrix[,31] -1, 2)
+
+# set.seed(123)
+
+# nn_model <- keras_model_sequential() 
+
+# nn_model %>%
+#  layer_dense(units = 30, activation = "relu", input_shape = ncol(train_x_nn)) %>% # input
+#  layer_dense(units = 22, activation = "relu") %>% # first hidden layer
+#  layer_dropout(rate = 0.5) %>% # first dropout
+#  layer_dense(units = 12, activation = "relu") %>% # second hidden layer
+#  layer_dense(units = 4, activation = "relu") %>% # third hidden layer 
+#  layer_dense(units = 2, activation = "sigmoid") # output
+
+# nn_model %>% compile(
+# loss = "binary_crossentropy",
+# optimizer = "adam",
+# metrics = c("accuracy")
+# )
+
+# Train Model       
+
+# I need a numeric matrix for both 
+# nn_model_trained <- nn_model %>% fit(
+# x = train_x_nn,
+# y = train_y_nn,
+# epochs = 400, # change to 100, 200, 400 (optimise hyperparameter)
+# batch_size = 64, # change to 32, 64, 128 (optimise hyperparameter). Could also use whole batch (13075, matches number of obs)
+# validation_split = 0.3 
+# )
+
+# saveRDS(nn_model, "../Models/nn_mod.rds")
+# saveRDS(nn_model_trained, "../Models/nn_mod_trained.rds")
+# nn_model <- readRDS("../Models/nn_mod.rds")
+# nn_model_trained <- readRDS("../Models/nn_mod_trained.rds")
+
+# Evaluation 
+# nn_mod_eval <- nn_model %>% tensorflow::evaluate(
+#  x = test_x_nn, 
+#  y = test_y_nn,
+#  verbose = 2
+# )
+
+# nn_model
+
+# Output metrics:
+# cat('Test loss:', nn_mod_eval[[1]], '\n')
+# cat('Test accuracy:', nn_mod_eval[[2]], '\n')
+
+# nn_test_preds <- predict(nn_model, test_x_nn)
+# nn_test_preds <- as.factor(max.col(nn_test_preds, ties.method = "first") - 1) # get in format for confusionmatrix
+# table(nn_test_preds)
+
+# confusionMatrix(nn_test_preds, test_y, positive = "1", mode = "everything")
+
+# nnet_1_test_acc <- caret::postResample(pred = nn_test_preds, obs = test_y)[1]
+# nnet_1_test_bal_acc <- caret::confusionMatrix(nn_test_preds, test_y, positive = "1")$byClass[11]
+# nnet_1_test_F1 <- caret::confusionMatrix(nn_test_preds, test_y, positive = "1", mode = "everything")$byClass[7]
+# nnet_1_test_specif <- caret::confusionMatrix(nn_test_preds, test_y, positive = "1")$byClass[2]
+# nnet_1_test_sensit <- caret::confusionMatrix(nn_test_preds, test_y, positive = "1")$byClass[1]
+# nnet_1_test_kap <- caret::postResample(pred = nn_test_preds, obs = test_y)[2]
+
+# models <- c(models, "NeuralNetwork")
+# max_accuracies <- c(max_accuracies, nnet_1_test_acc)
+# max_bal_accuracies <- c(max_bal_accuracies, nnet_1_test_bal_acc)
+# max_F1 <- c(max_F1, nnet_1_test_F1)
+# max_specificities <- c(max_specificities, nnet_1_test_specif)
+# max_sensitivities <- c(max_sensitivities, nnet_1_test_sensit)
+# max_kappas <- c(max_kappas, nnet_1_test_kap)
+
+# model_eval <- cbind(models, max_accuracies, max_bal_accuracies, max_F1, max_kappas, max_sensitivities, max_specificities)
+
+# write.csv(model_eval, "../Data/Extracts/model_eval.csv")
+
+# plot(nn_model_trained)
+
+# nn_val_plot
+
+```
+# Final Model
+```{r}
+library(xgboost)
+library(ranger)
+
+model_eval <- read_csv("../Data/Extracts/model_eval.csv")
+
+#final_model <- ranger(x = train_x,
+#                    y = train_y,
+#                    mtry = 3,
+#                    splitrule = "gini",
+##                    min.node.size = 1,
+#                    num.trees = 500,
+#                    probability = TRUE,
+#                    importance = "permutation"
+#                   )
+
+# final_model <- ranger(train_y ~ ., 
+#                    data = cbind(train_x, train_y),
+#                    mtry = 10,
+#                   splitrule = "gini",
+#                   min.node.size = 6,
+#                    num.trees = 500,
+#                    probability = TRUE,
+#                    importance = "permutation"
+#                   )
+
+# saveRDS(final_model, "../Models/final_model_rf.rds")
+
+final_model <- readRDS("../Models/final_model_rf.rds")
+
+test_preds_final_probs <- predict(final_model, test_x)$predictions[,2]
+
+test_preds_final_class <- as.factor(ifelse(test_preds_final_probs > 0.5, 1, 0))
+
+caret::confusionMatrix(test_preds_final_class, test_y, positive = "1", mode = "everything")
+
+final_test_acc <- caret::postResample(pred = test_preds_final_class, obs = test_y)[1]
+final_test_bal_acc <- caret::confusionMatrix(test_preds_final_class, test_y, positive = "1")$byClass[11]
+final_test_F1 <- caret::confusionMatrix(test_preds_final_class, test_y, positive = "1", mode = "everything")$byClass[7]
+final_test_specif <- caret::confusionMatrix(test_preds_final_class, test_y, positive = "1")$byClass[2]
+final_test_sensit <- caret::confusionMatrix(test_preds_final_class, test_y, positive = "1")$byClass[1]
+final_test_kap <- caret::postResample(pred = test_preds_final_class, obs = test_y)[2]
+final_test_precis <- confusionMatrix(test_preds_final_class, test_y, positive = "1", mode = "everything")$byClass[5]
+final_test_recall <- confusionMatrix(test_preds_final_class, test_y, positive = "1", mode = "everything")$byClass[6]
+
+final_mod_eval <- c("RandomForest",final_test_acc, final_test_bal_acc, final_test_F1,final_test_specif,final_test_sensit,  final_test_kap, final_test_precis, final_test_recall)
+final_mod_eval
+
+# write.csv(final_mod_eval, "../Data/Extracts/final_model_eval.csv")
+```
+

@@ -1,0 +1,1281 @@
+---
+title: "MY498 Data Wrangling"
+author: "Christy Coulson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+```
+
+## Loading Data
+
+
+__Hegre & Sambanis Data__
+```{r message=TRUE, warning=TRUE}
+# Hegre & Sambanis from Muchlinski & Siroky. 
+HS <- read_csv("~/Downloads/SambnisImp.csv")
+```
+
+
+__Terrain Ruggedness__
+```{r message=FALSE, warning=FALSE}
+terr_rugg <- read_csv("../Data/Input/terrain-ruggedness-index.csv") %>%
+  select(-Year)
+
+names(terr_rugg) <- c("country","country_code","terr_rugg_ind")
+```
+
+
+__Regime Characteristics (Polity 5)__
+```{r}
+polity5 <- read_excel("../Data/Input/polity5.xls")
+
+polity5 <- polity5 %>%
+  select(-p5, -flag, -exconst, -exrec, -polcomp, -prior, -emonth, -eday, -eyear, -eprec, -interim, -bmonth, -bday, -byear, -bprec, -post, -change, -d5) 
+# exconst, exrec & polcomp are summaries of other characteristics.  e/d day/year/month are beginning and end. Prior, post and change are polity scores, d5 is regime trans complete.
+
+polity5 <- polity5 %>%
+  rename(state_fail = sf
+         )
+
+# Remaining:
+# Polity2 converts -66,-77 and -88 to standardised polity2 scores. 
+# Fragment states whether country has fragmented autonomous regions within borders being governed by another body. 
+# XRREGL Regulation of Chief Executive Recruitment
+# XRCOMP: Competitiveness of Executive Recruitment
+# XROPEN: Openness of Executive Recruitment
+# XCONST: Executive Constraints (decision rules)
+# PARREG: Regulation of Participation
+# PARCOMP: Competitiveness of Participation
+
+```
+
+
+__Military Expenditure__
+```{r warning=FALSE}
+#################################  Military Expenditure Per Capita
+milit_exp_per_cap <- read_excel("../Data/Input/SIPRI-Milex-Per-cap.xlsx")
+
+milit_exp_per_cap <- milit_exp_per_cap %>%
+  gather(year, mil_exp_pc, '1988':'2021')
+# Need to get appropriate COW or alternative code
+
+regional_mil_exp_pc <- milit_exp_per_cap %>%
+  group_by(Region, year) %>%
+  summarise(avg_region_exp_pc = mean(mil_exp_pc))
+
+
+################################# Military Spending as Proportion of Government Spending
+mili_exp_govt <- read_excel("../Data/Input/SIPRI-Milex-govt-spend.xlsx")
+
+mili_exp_govt <- mili_exp_govt %>%
+  gather(year, mil_exp_govt, '1988':'2021')
+# Need to get appropriate COW or alternative code
+
+regional_mil_exp_govt <- mili_exp_govt %>%
+  group_by(Region, year) %>%
+  summarise(avg_region_exp_govt = mean(mil_exp_govt))
+```
+
+
+__GDP Growth %__
+```{r warning=FALSE}
+GDP_gr <- read_csv("../Data/Input/GDP_Growth_perc.csv") %>% 
+  select(-"Series Name", -"Series Code")
+
+GDP_gr <- GDP_gr %>%
+  rename(county = "Country Name",
+         country_code = "Country Code")
+
+names(GDP_gr) <- substring(names(GDP_gr), 1, 4)
+GDP_gr <- janitor::clean_names(GDP_gr) # clean names
+names(GDP_gr) <- substring(names(GDP_gr), 2, 5) # remove first character generated for years by janitor
+GDP_gr <- GDP_gr %>% rename(country = oun, country_code = oun_) # rename columns
+
+GDP_gr <- GDP_gr %>%
+  gather(year, gdp_growth, '1960':'2021')
+
+```
+
+
+__Adult Literacy Rates__
+_1970 onwards_
+```{r warning=FALSE}
+lit_rates <- read_csv("../Data/Input/lit_rates.csv")
+
+lit_rates <- lit_rates %>%
+  rename(county = "Country Name",
+         country_code = "Country Code")
+
+lit_rates <- lit_rates %>%
+  gather(year, lit_rate, '1960':'2021')
+
+```
+
+
+__Ethnic Fragmentation__
+_Only up to 2013_
+```{r warning=FALSE}
+ethnic_frag <- read_csv("../Data/Input/HIEF_data.csv") 
+```
+
+
+__Infant Mortality (Under 5)__
+```{r}
+infant_mortality <- read_excel("../Data/Input/infant_mortality.xlsx")
+
+infant_mortality <- infant_mortality %>%
+  gather(year, infant_mortality, '1950':'2021')
+```
+
+
+__Population Density__
+```{r}
+pop_density <- read_excel("../Data/Input/pop_density.xlsx")
+
+pop_density <- pop_density %>%
+  rename(county = "Country Name",
+         country_code = "Country Code")
+
+names(pop_density) <- substring(names(pop_density), 1, 4)
+pop_density <- janitor::clean_names(pop_density) # clean names
+names(pop_density) <- substring(names(pop_density), 2, 5) # remove first character generated for years by janitor
+pop_density <- pop_density %>% rename(country = oun, country_code = oun_) # rename columns
+
+pop_density <- pop_density %>%
+  gather(year, pop_density, '1960':'2021')
+```
+
+
+__Population Growth__
+```{r}
+pop_growth <- read_excel("../Data/Input/pop_growth.xlsx")
+
+pop_growth <- pop_growth %>%
+  rename(county = "Country Name",
+         country_code = "Country Code")
+
+names(pop_growth) <- substring(names(pop_growth), 1, 4)
+pop_growth <- janitor::clean_names(pop_growth) # clean names
+names(pop_growth) <- substring(names(pop_growth), 2, 5) # remove first character generated for years by janitor
+pop_growth <- pop_growth %>% rename(country = oun, country_code = oun_) # rename columns
+
+pop_growth <- pop_growth %>%
+  gather(year, pop_growth, '1960':'2021')
+```
+
+
+__% Male Between 15-29__
+```{r warning=FALSE}
+
+male_15_29 <- read_csv("../Data/Input/male_15_29.csv")
+
+gender_age_country_year <- male_15_29 # rename smaller
+names(gender_age_country_year) <- substring(names(gender_age_country_year), 1, 4) # Make column names first 4 charactrs to isolate years
+
+names(gender_age_country_year)
+
+gender_age_country_year <- janitor::clean_names(gender_age_country_year) # clean names
+names(gender_age_country_year) <- substring(names(gender_age_country_year), 2, 5) # remove first character generated for years by janitor
+gender_age_country_year <- gender_age_country_year %>% select(-eri_) # remove excess field
+# rename columns
+gender_age_country_year <- gender_age_country_year %>% rename(Country = oun, Country_Code = oun_, Type = eri) 
+
+# Now, ready for gathering
+
+gender_age_country_year_tidy <- gender_age_country_year %>%
+  gather(year, figure, '1960':'2050')
+
+gender_age_country_year_tidy$figure <- as.numeric(gender_age_country_year_tidy$figure)
+
+young_men_totals <- as.data.frame(gender_age_country_year_tidy %>%  
+  filter(Type %in% c("Population ages 15-19, male", 'Population ages 20-24, male', 'Population ages 25-29, male')) %>%
+  group_by(Country, Country_Code, year) %>%
+  summarise(figure = sum(figure))) # Generate total 15-29 number
+
+population_totals <- as.data.frame(gender_age_country_year_tidy %>% 
+  filter(Type == 'Population, total') %>%
+  group_by(Country, Country_Code, year) %>%
+  summarise(figure = sum(figure))) # Generate total pop number per country-year
+
+young_men_population_totals <- left_join(young_men_totals, population_totals, by = c("Country" = "Country", "Country_Code" = "Country_Code", "year" = "year"))
+
+young_men_population_totals <- young_men_population_totals %>% rename(young_men_population = figure.x, total_population = figure.y)
+
+young_men_population_totals <- young_men_population_totals %>%
+  mutate(percentage = young_men_population/total_population)
+
+young_men_population_totals$year <- as.double(young_men_population_totals$year)
+str(young_men_population_totals)
+
+# New code
+male_15_29 <- young_men_population_totals %>%
+  select(Country, 
+         Country_Code,
+         year,
+         percentage)
+
+names(male_15_29) <- c("country","country_code","year","male_15_29_pct")
+
+rm(World_Bank_Male_pop_15_29_1960_2050)
+rm(gender_age_country_year)
+rm(gender_age_country_year_tidy)
+rm(young_men_totals)
+rm(young_men_population_totals)
+rm(population_totals)
+```
+
+
+__Internet Usage__
+```{r}
+internet_usage <- read_excel("../Data/Input/internet_usage.xlsx")
+
+names(internet_usage) <- substring(names(internet_usage), 1, 4)
+internet_usage <- janitor::clean_names(internet_usage) # clean names
+names(internet_usage) <- substring(names(internet_usage), 2, 5) # remove first character generated for years 
+internet_usage <- internet_usage %>% rename(country = oun, country_code = oun_) # rename columns
+
+internet_usage <- internet_usage %>%
+  gather(year, internet_usage, '1960':'2021')
+```
+
+
+__Life Expectancy__
+```{r}
+life_expect <- read_excel("../Data/Input/life_expect.xlsx")
+
+names(life_expect) <- substring(names(life_expect), 1, 4)
+life_expect <- janitor::clean_names(life_expect) # clean names
+names(life_expect) <- substring(names(life_expect), 2, 5) # remove first character generated for years by janitor
+life_expect <- life_expect %>% rename(country = oun, country_code = oun_, type = ype) # rename columns
+
+life_expect <- life_expect %>%
+  gather(year, life_expect, '1960':'2021') %>%
+  filter(type == 'Polity') %>%
+  select(-type)
+```
+
+
+__Dependant Variable: Civil War Onset__
+```{r warning=FALSE}
+cw_onset <- read_csv("../Data/Input/cw_onset.csv")
+
+dependent_variable <- cw_onset %>%
+  select(abc, name, gwno_a, year, newconf)
+
+cw_onset <- cw_onset %>%
+  select(-onset1) %>%
+  rename(last_conf_2_yr = onset2,
+         last_conf_3_yr = onset3,
+         last_conf_5_yr = onset5,
+         last_conf_10_yr = onset10,
+         last_conf_20_yr = onset20)
+```
+
+
+__Country Codes for Connections__
+```{r}
+
+library("states")
+    
+data(gwstates)
+# gwcode: Gleditsch and Ward country code.
+# gwc: G&W character country code. This is derived from the COW character codes.
+
+data(cowstates)
+
+library("countrycode")
+
+country_codelist <- codelist %>%
+  select(country.name.en,iso2c,iso3c,iso3n,cowc,cown,gwc,gwn,p4n,p4c,continent,wb,vdem,un)
+
+```
+
+
+# Joining Data
+
+__Country Codes__
+```{r}
+# Start with dependent variable, joining with identifiers to allow for joining with rest of data. 
+data_1 <- dependent_variable %>%
+  left_join(country_codelist, by = c("gwno_a" = "gwn")) 
+
+nrow(dependent_variable)
+nrow(data_1)
+```
+
+
+__Terrain Ruggedness__
+```{r}
+data_2 <- data_1 %>% 
+  left_join(terr_rugg, by = c("iso3c" = "country_code")) %>%
+  select(-country.name.en, -country)
+
+nrow(data_1)
+nrow(data_2)
+```
+
+
+__Regime Characteristics__
+```{r}
+
+data_3 <- data_2 %>%
+  left_join(polity5, by = c("cown" = "ccode",
+                            "year" = "year")) %>%
+  select(-cyear, -scode, -country)
+
+nrow(data_2)
+nrow(data_3)
+
+```
+
+
+__Military Expenditure__
+```{r}
+
+mili_exp_govt_cc <- countrycode(mili_exp_govt$Country, 
+            origin = "country.name",
+            destination = "gwn")
+
+mili_exp_govt <- cbind(mili_exp_govt, mili_exp_govt_cc)
+
+mili_exp_govt %>%
+  filter(is.na(mili_exp_govt_cc)) %>%
+  select(Country) %>%
+  distinct()
+
+mili_exp_govt$mili_exp_govt_cc[mili_exp_govt$Country == "Türkiye"] <- 640
+mili_exp_govt$mili_exp_govt_cc[mili_exp_govt$Country == "Yemen"] <- 678
+
+mili_exp_govt %>%
+  filter(is.na(mili_exp_govt_cc)) %>%
+  select(Country) %>%
+  distinct()
+
+mili_exp_govt$year <- as.numeric(mili_exp_govt$year)
+
+data_3 %>%
+  left_join(mili_exp_govt, 
+            by = c("gwno_a" = "mili_exp_govt_cc",
+                   "year" = "year"))
+
+# NOT JOINED BECAUSE DATA ONLY REALLY STARTS FROM 80s onwards
+```
+
+
+__GDP Growth %__
+```{r}
+GDP_gr$gdp_growth[GDP_gr$gdp_growth == ".."] <- NA
+
+sum(is.na(GDP_gr$gdp_growth))/nrow(GDP_gr) # 25.8% have NA values
+
+GDP_gr$year <- as.numeric(GDP_gr$year)
+
+data_4 <- data_3 %>%
+  left_join(GDP_gr,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_3)
+nrow(data_4)
+
+data_4 <- distinct(data_4) 
+
+nrow(data_3)
+nrow(data_4)
+```
+
+
+__Ethnic Fragmentation__
+```{r warning=FALSE}
+sum(is.na(countrycode(ethnic_frag$Country, 
+            origin = "country.name",
+            destination = "gwn")))
+
+ef_cc <- countrycode(ethnic_frag$Country, 
+            origin = "country.name",
+            destination = "gwn")
+
+ethnic_frag <- cbind(ethnic_frag, ef_cc)
+
+ethnic_frag$ef_cc[is.na(ethnic_frag$ef_cc) == TRUE] <- 817
+
+ethnic_frag <- ethnic_frag %>%
+  filter(Country != "Republic of Vietnam")
+
+sum(is.na(ethnic_frag$ef_cc))
+
+data_5 <- data_4 %>%
+  left_join(ethnic_frag, 
+            by = c("year" = "Year",
+            "gwno_a" = "ef_cc")) 
+
+data_5 <- data_5 %>%
+  select(-Country, -country)
+
+nrow(data_4)
+nrow(data_5)
+
+nrow(distinct(data_5))
+
+data_5 <- distinct(data_5)
+```
+
+
+__Infant Mortality__
+```{r}
+infant_mortality$year <- as.numeric(infant_mortality$year)
+
+data_6 <- data_5 %>%
+  left_join(infant_mortality, 
+            by = c("year" = "year",
+            "iso3c" = "country_code_ISO"))
+
+nrow(data_5)
+nrow(data_6)
+```
+
+
+__Population Density__
+```{r}
+sum(is.na(pop_density$pop_density))/nrow(pop_density) # 5.54% have NA values
+
+pop_density$year <- as.numeric(pop_density$year)
+
+data_7 <- data_6 %>%
+  left_join(pop_density,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_6)
+nrow(data_7)
+```
+
+
+__Population Growth__
+```{r}
+sum(is.na(pop_growth$pop_growth))/nrow(pop_growth) # 2.2% have NA values
+
+pop_growth$year <- as.numeric(pop_growth$year)
+
+data_8 <- data_7 %>%
+  left_join(pop_growth,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_7)
+nrow(data_8)
+```
+
+
+__% Male 15 to 29__
+```{r}
+sum(is.na(male_15_29$male_15_29_pct))/nrow(male_15_29) # 10.8% have NA values
+
+male_15_29$year <- as.numeric(male_15_29$year)
+
+data_9 <- data_8 %>%
+  left_join(male_15_29,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_8)
+nrow(data_9)
+```
+
+
+__Internet Usage__
+```{r}
+sum(is.na(internet_usage$internet_usage))/nrow(internet_usage) # 53.8% have NA values
+
+internet_usage$year <- as.numeric(internet_usage$year)
+
+data_10 <- data_9 %>%
+  left_join(internet_usage,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_9)
+nrow(data_10)
+```
+
+
+__Life Expectancy__
+```{r}
+sum(is.na(life_expect$life_expect))/nrow(life_expect) # 8.8% have NA values
+
+life_expect$year <- as.numeric(life_expect$year)
+
+data_11 <- data_10 %>%
+  left_join(life_expect,
+            by = c("wb" = "country_code",
+                   "year" = "year"))
+
+nrow(data_10)
+nrow(data_11)
+```
+
+
+__Adding time since last conflict__
+```{r}
+cw_onset <- cw_onset %>%
+  select(-abc, -name, -newconf, -conflict_ids, -year_prev)
+
+data_12 <- data_11 %>%
+  left_join(cw_onset,
+            by = c("gwno_a" = "gwno_a",
+                   "year" = "year"))
+
+nrow(data_11)
+nrow(data_12)
+```
+
+
+__Region__
+```{r}
+Region <- mili_exp_govt %>%
+  select(Region, mili_exp_govt_cc)
+
+Region <- distinct(Region)
+
+data_13 <- data_12 %>%
+  left_join(Region,
+            by = c("gwno_a" = "mili_exp_govt_cc"))
+```
+
+
+__Remove Indicators and leave just outcome and features__
+```{r}
+data_14 <- data_13 %>%
+  select(newconf, 
+         name, year, continent, Region,
+         terr_rugg_ind, 
+         fragment, 
+         democ, autoc, polity, polity2, 
+         durable, 
+         xrreg, xrcomp, xropen, xconst, parreg, parcomp, 
+         state_fail, regtrans,
+         gdp_growth,
+         EFindex, 
+         infant_mortality,
+         pop_density, pop_growth,
+         male_15_29_pct,
+         internet_usage,
+         life_expect,
+         last_conf_2_yr, last_conf_3_yr, last_conf_5_yr, last_conf_10_yr, last_conf_20_yr
+         )
+```
+
+
+#Transformations
+
+```{r warning=FALSE}
+## SPECIAL VALUES FOR POLITY STUFF
+
+# -66: Cases of foreign “interruption”
+data_14$democ[data_14$democ == -66] <- NA
+data_14$autoc[data_14$autoc == -66] <- NA
+data_14$polity[data_14$polity == -66] <- NA
+data_14$xrreg[data_14$xrreg == -66] <- NA
+data_14$xrcomp[data_14$xrcomp == -66] <- NA
+data_14$xropen[data_14$xropen == -66] <- NA
+data_14$xconst[data_14$xconst == -66] <- NA
+data_14$parreg[data_14$parreg == -66] <- NA
+data_14$parcomp[data_14$parcomp == -66] <- NA
+
+# -77: Cases of “interregnum,” or anarchy, are converted to a “neutral” Polity score of “0.”
+data_14$democ[data_14$democ == -77] <- 0
+data_14$autoc[data_14$autoc == -77] <- 0
+data_14$polity[data_14$polity == -77] <- 0
+data_14$xrreg[data_14$xrreg == -77] <- 0
+data_14$xrcomp[data_14$xrcomp == -77] <- 0
+data_14$xropen[data_14$xropen == -77] <- 0
+data_14$xconst[data_14$xconst == -77] <- 0
+data_14$parreg[data_14$parreg == -77] <- 0
+data_14$parcomp[data_14$parcomp == -77] <- 0
+
+data_14$gdp_growth <- as.numeric(data_14$gdp_growth)
+
+# Regions not in initial database, manually added.
+data_14$Region[data_14$name == "Vietnam, Democratic Republic of"] <- "South East Asia"
+data_14$Region[data_14$name == "Bhutan"] <- "South Asia"
+data_14$Region[data_14$name == "Maldives"] <- "South Asia"
+data_14$Region[data_14$name == "Barbados"] <- "Central America and the Caribbean" 
+data_14$Region[data_14$name == "Bahamas"] <- "Central America and the Caribbean" 
+data_14$Region[data_14$name == "Surinam"] <- "Central America and the Caribbean" 
+data_14$Region[data_14$name == "Comoros"] <- "sub-Saharan Africa" 
+data_14$Region[data_14$name == "Solomon Islands"] <- "Oceania" 
+data_14$Region[data_14$name == "Yemen, People's Republic of"] <- "Middle East" 
+data_14$Region[data_14$name == "Zanzibar"] <- "sub-Saharan Africa" 
+
+# -88: Remove cases of -88 as don't properly translate to polity stuff.
+data_14 <- data_14 %>%
+  filter(democ != -88)
+
+regional_avgs <-  data_14 %>%
+  filter(year > 1959) %>%
+  group_by(Region, year) %>%
+  summarise(avg_region_polity = mean(polity, na.rm = TRUE),
+            avg_region_gdp_gr = mean(gdp_growth, na.rm = TRUE),
+            avg_region_eth_frag = mean(EFindex, na.rm = TRUE),
+            avg_region_life_exp = mean(life_expect, na.rm = TRUE),
+            neighbour_at_war = case_when(sum(newconf) > 0 ~ 1))
+
+# 0 for a neighbour not at war that year
+regional_avgs$neighbour_at_war[is.na(regional_avgs$neighbour_at_war) == TRUE] <- 0
+
+# 1960 onwards
+data_15 <- data_14 %>%
+  left_join(regional_avgs,
+            by = c("year" = "year",
+                   "Region" = "Region")) %>%
+  filter(year > 1960) %>%
+  dplyr::select(-regtrans) 
+
+paste("There are", sum(is.na(data_15$Region) == TRUE), "countries without a labelled region now.")
+table(data_15$newconf, data_15$year)
+```
+
+
+#Missing Data
+
+__EDA__
+```{r}
+# Internet usage set to 0 pre-1990
+data_15$internet_usage[is.na(data_15$internet_usage) == TRUE & data_15$year < 1989] <- 0
+
+# State fail set to 0 where not 1 
+data_15$state_fail[is.na(data_15$state_fail) == TRUE] <- 0
+
+data_16 <- data_15 %>%
+  mutate(newconf = factor(newconf),
+         Region = factor(Region),
+         fragment = factor(fragment),
+         state_fail = factor(state_fail),
+         last_conf_2_yr = factor(last_conf_2_yr),
+         last_conf_3_yr = factor(last_conf_3_yr),
+         last_conf_5_yr = factor(last_conf_5_yr),
+         last_conf_10_yr = factor(last_conf_10_yr),
+         last_conf_20_yr = factor(last_conf_20_yr),
+         neighbour_at_war = factor(neighbour_at_war))
+
+nas_per_country_column <- data_16 %>%
+  group_by(name) %>%
+  summarise(region_nas = sum(is.na(Region)),
+            terr_rugg_nas = sum(is.na(terr_rugg_ind)),
+            fragment_nas = sum(is.na(fragment)),
+            democ_nas = sum(is.na(democ)),
+            autoc_nas = sum(is.na(autoc)),
+            polity_nas = sum(is.na(polity)),
+            polity2_nas = sum(is.na(polity2)),
+            durable_nas = sum(is.na(durable)),
+            xrreg_nas = sum(is.na(xrreg)),
+            xrcomp_nas = sum(is.na(xrcomp)),
+            xropen_nas = sum(is.na(xropen)),
+            xconst_nas = sum(is.na(xconst)),
+            parreg_nas = sum(is.na(parreg)),
+            parcomp_nas = sum(is.na(parcomp)),
+            gdp_growth_nas = sum(is.na(gdp_growth)),
+            efind_nas = sum(is.na(EFindex)),
+            inf_mort_nas = sum(is.na(infant_mortality)),
+            pop_dens_nas = sum(is.na(pop_density)),
+            pop_gro_nas = sum(is.na(pop_growth)),
+            male_15_29_nas = sum(is.na(male_15_29_pct)),
+            intern_use_nas = sum(is.na(internet_usage)),
+            life_expect_nas = sum(is.na(life_expect)),
+            region_gdp_gr_nas = sum(is.na(avg_region_gdp_gr)),
+            region_eth_frag_nas = sum(is.na(avg_region_eth_frag)),
+            total_nas = region_nas+terr_rugg_nas+democ_nas+autoc_nas+polity_nas+polity2_nas+durable_nas+xrreg_nas+xrcomp_nas+xropen_nas+xconst_nas+parreg_nas+parcomp_nas+gdp_growth_nas+efind_nas+inf_mort_nas+pop_dens_nas+pop_gro_nas+male_15_29_nas+intern_use_nas+life_expect_nas+region_gdp_gr_nas+region_eth_frag_nas) %>%
+  arrange(desc(total_nas))
+
+# Top 10 by missing values and their number of newconfs
+# Vietnam, Democratic Republic of (0 newconf) - 1116
+# Maldives (0 newconf) - 672
+# Yemen (Arab Republic of Yemen) (4 newconf) - 733
+# Iceland (0 newconf) - 715
+# Barbados (0 newconf) - 638
+# Malta (0 newconf) - 660
+# Bahamas (0 newconf) - 545
+# Yugoslavia (2 newconf) - 541 
+# Belize (0 newconf) - 451
+# Brunei (0 newconf) - 413
+#
+1116+672+(733-4)+715+638+660+545+(541-2)+451+413 # could get rid of 6478 NA values by removing these countries, except
+# where newconf = 1. 
+
+data_17 <- data_16 %>%
+  filter(name != "Vietnam, Democratic Republic of") %>%
+  filter(name != "Maldives") %>%
+  filter(name != "Yemen (Arab Republic of Yemen)" | newconf == 1)  %>%
+  filter(name != "Iceland") %>%
+  filter(name != "Barbados") %>%
+  filter(name != "Malta") %>%
+  filter(name != "Bahamas" ) %>%
+  filter(name != "Yugoslavia" | newconf == 1) %>%
+  filter(name != "Belize" ) %>%
+  filter(name != "Brunei" ) %>%
+  dplyr::select(-continent)
+
+# Get years for full data set
+year <- data_17$year
+
+# Get years for full data set
+year <- data_17$year
+
+data_17 <- data_17 %>%
+  select(-year)
+
+na_counts <- sapply(data_17, function(x) sum(is.na(x)))
+names(na_counts) <- names(data_17)
+
+# NAs in continent, Region, terr_rugg_ind
+na_counts
+
+data_18 <- data_17 %>%
+  select(-fragment, -Region)
+
+str(data_18)
+
+na_counts_2 <- sapply(data_18, function(x) sum(is.na(x)))
+names(na_counts_2) <- names(data_18)
+na_counts_2 
+
+# NAs are systematic based on data source and whether polity still exists.
+
+paste("There are", sum(na_counts_2), "NA values in total, from", nrow(data_18)*ncol(data_18), "cells, constituting", sum(na_counts_2)/(nrow(data_18)*ncol(data_18)), "% being NAs.")
+
+# NA values down from 13,000 to 6274. 
+# 57 Country-years per country
+
+sort(na_counts_2)
+
+data_18 %>%
+  filter(is.na(gdp_growth) == TRUE)
+
+data_18 %>%
+  filter(is.na(EFindex) == TRUE)
+
+data_18 %>%
+  filter(is.na(infant_mortality) == TRUE)
+
+data_18 %>%
+  filter(is.na(internet_usage) == TRUE)
+
+data_18 %>%
+  filter(is.na(polity2) == TRUE) # get rid, as we have polity?
+
+data_18 %>%
+  filter(is.na(pop_density) == TRUE)
+
+data_18 %>%
+  filter(is.na(male_15_29_pct) == TRUE)
+
+data_18 %>%
+  filter(is.na(life_expect) == TRUE)
+
+data_18 %>%
+  filter(is.na(durable) == TRUE)
+
+data_18 %>%
+  filter(is.na(pop_growth) == TRUE)
+
+data_18 %>%
+  filter(is.na(pop_growth) == TRUE & newconf == 1)
+
+# German Democratic Republic	
+# Czechoslovakia	
+# Yugoslavia	
+# Zanzibar
+# Israel
+# Yemen (Arab Republic of Yemen)	
+# Yemen, People's Republic of	
+# Taiwan	
+data_19 <- data_18 %>%
+  select(-name)
+
+
+## SPECIAL VALUES FOR POLITY STUFF
+
+# -66: Cases of foreign “interruption”
+data_19$democ[data_19$democ == -66] <- NA
+data_19$autoc[data_19$autoc == -66] <- NA
+data_19$polity[data_19$polity == -66] <- NA
+data_19$xrreg[data_19$xrreg == -66] <- NA
+data_19$xrcomp[data_19$xrcomp == -66] <- NA
+data_19$xropen[data_19$xropen == -66] <- NA
+data_19$xconst[data_19$xconst == -66] <- NA
+data_19$parreg[data_19$parreg == -66] <- NA
+data_19$parcomp[data_19$parcomp == -66] <- NA
+
+# -77: Cases of “interregnum,” or anarchy, are converted to a “neutral” Polity score of “0.”
+data_19$democ[data_19$democ == -77] <- 0
+data_19$autoc[data_19$autoc == -77] <- 0
+data_19$polity[data_19$polity == -77] <- 0
+data_19$xrreg[data_19$xrreg == -77] <- 0
+data_19$xrcomp[data_19$xrcomp == -77] <- 0
+data_19$xropen[data_19$xropen == -77] <- 0
+data_19$xconst[data_19$xconst == -77] <- 0
+data_19$parreg[data_19$parreg == -77] <- 0
+data_19$parcomp[data_19$parcomp == -77] <- 0
+
+```
+
+
+__Missing Data: Imputation__
+
+
+_Hyperparameter Tuning for Model Selection_
+```{r}
+library(missForest)
+
+# data_19 <- as.data.frame(data_19)
+
+# mtrys <- c(3, 4,sqrt(ncol(data_19)),8,10)
+# nodesizes <- c(6, 10, 15, 21)
+
+# mfor_tuning_errors <- c()
+
+# for (i in mtrys) {
+#   for (j in nodesizes) {
+    
+#     mfor_data_fl <- missForest(data_19,
+#           maxiter = 15,
+#           ntree = 100, 
+#           verbose = TRUE, 
+#           replace = TRUE,
+#           mtry = i,
+#           nodesize = c(j, j),
+#           )
+    
+#    mfor_tuning_errors <- c(mfor_tuning_errors, mfor_data_fl$OOBerror[1], i, j)
+#    
+#  } 
+# }
+
+# mfor_tuning_errors
+
+# which.min(mfor_tuning_errors)
+
+# mfor_tuning_errors[which.min(mfor_tuning_errors)]
+# mfor_tuning_errors[which.min(mfor_tuning_errors) + 1] 
+# i (mtrys) = 10
+# mfor_tuning_errors[which.min(mfor_tuning_errors) + 2] 
+# j (nodesizes) = 6
+
+
+```
+
+
+_Final Model & Data Imputation_
+```{r}
+library(missForest)
+
+# data_19 <- as.data.frame(data_19)
+  
+# data_imp_mod <-  missForest(data_19,
+#                              maxiter = 20,
+#                             ntree = 250, # change to 250
+#                             verbose = TRUE, 
+#                             replace = TRUE,
+#                             mtry = 10,
+#                             nodesize = c(6, 6))
+
+# saveRDS(data_imp_mod, "../Models/data_imp_mod.rds")
+
+data_imp_mod <- readRDS("../Models/data_imp_mod.rds")
+
+data_imp_mod$OOBerror
+
+data_imp <- data_imp_mod$ximp
+data_19 <- as.data.frame(data_19)
+
+sapply(data_imp, function(x) sum(is.na(x)))
+# Demonstrated that it works 
+
+sapply(data_19, function(x) sum(is.na(x)))
+sum(sapply(data_19, function(x) sum(is.na(x))))/(nrow(data_19)*ncol(data_19)) # 0.166
+
+identical(nrow(data_19),nrow(data_imp_mod$ximp))
+identical(ncol(data_19),ncol(data_imp_mod$ximp))
+
+data_19[is.na(data_19)] <- data_imp[is.na(data_19)]
+
+sapply(data_19, function(x) sum(is.na(x)))
+# No missing values!
+
+data_20 <- cbind(year, data_17$Region, data_19) %>%
+  rename(Region = 'data_17$Region') %>%
+  mutate(newconf = as.numeric(newconf) -1,
+    terr_rugg_ind = as.numeric(terr_rugg_ind),
+         democ = as.numeric(democ),
+         autoc = as.numeric(autoc),
+         polity = as.numeric(polity),
+         polity2 = as.numeric(polity2),
+         durable = as.numeric(durable),
+         xrreg = as.numeric(xrreg),
+         xrcomp = as.numeric(xrcomp),
+         xropen = as.numeric(xropen),
+         xconst = as.numeric(xconst),
+         parreg = as.numeric(parreg),
+         parcomp = as.numeric(parcomp),
+         gdp_growth = as.numeric(gdp_growth),
+         EFindex = as.numeric(EFindex),
+         infant_mortality = as.numeric(infant_mortality),
+         pop_density = as.numeric(pop_density),
+         pop_growth = as.numeric(pop_growth),
+         male_15_29_pct = as.numeric(male_15_29_pct),
+         internet_usage = as.numeric(internet_usage),
+         life_expect = as.numeric(life_expect)
+         ) %>%
+  select(-avg_region_polity,
+         -avg_region_gdp_gr,
+         -avg_region_eth_frag,
+         -avg_region_life_exp,
+         -neighbour_at_war)
+```
+
+
+__Final Data Transformation__
+```{r warning=FALSE}
+library(caret)
+library(data.table)
+library(mltools)
+
+# Recreate Regionals with imputed data
+sapply(cbind(data_20, data_17$Region, year), function(x) sum(is.na(x))) # no missing region values
+
+regional_avgs <-  data_20 %>%
+  group_by(Region, year) %>%
+  summarise(avg_region_polity = mean(polity, na.rm = TRUE),
+            avg_region_gdp_gr = mean(gdp_growth, na.rm = TRUE),
+            avg_region_eth_frag = mean(EFindex, na.rm = TRUE),
+            avg_region_life_exp = mean(life_expect, na.rm = TRUE),
+            neighbour_at_war = case_when(sum(as.numeric(newconf)) > 0 ~ 1))
+
+sapply(regional_avgs, function(x) sum(is.na(x))) # 0 missing values! 
+  
+# 0 for a neighbour not at war that year
+regional_avgs$neighbour_at_war[is.na(regional_avgs$neighbour_at_war) == TRUE] <- 0
+
+sapply(regional_avgs, function(x) sum(is.na(x))) # 0 missing values! 
+
+# 1960 onwards
+data_21 <- data_20 %>%
+  left_join(regional_avgs,
+            by = c("year" = "year",
+                   "Region" = "Region")) %>%
+  mutate(newconf = as.factor(newconf),
+         neighbour_at_war = as.factor(neighbour_at_war)) %>%
+  dplyr::select(-year, -Region, -polity2)
+  
+sapply(data_21, function(x) sum(is.na(x))) # 0 missing values! 
+
+str(data_21)
+
+################################### Scale the data for RNN suitability
+
+cols_to_scale <- c(2:12, 14:21, 27:30)
+col_names <- names(data_21)[cols_to_scale]
+
+# Get standard devs & means for rescaling
+data_x_means <- colMeans(data_21[,c(2:12, 14:21, 27:30)])
+names(data_x_means) <- col_names
+data_x_sds <- sapply(data_21[,c(2:12, 14:21, 27:30)], sd)
+names(data_x_sds) <- col_names
+
+data_21[, cols_to_scale] <- scale(data_21[, cols_to_scale], center = TRUE, scale = TRUE)
+names(data_21)[cols_to_scale] <- col_names
+
+data_summary <- summary(data_21)
+
+str(data_21)
+sapply(data_21, function(x) sum(is.na(x))) # 0 missing values! 
+
+table(data_21$newconf)
+```
+
+# Get Observation Description Data
+
+```{r}
+obs_descr <- cbind(data_17$name, data_20$year, data_20$newconf) %>%
+  as.data.frame() %>%
+  rename(country = V1, year = V2, newconf = V3)
+
+obs_descr %>%
+  group_by(country) %>%
+  summarise(obs_per_country = n()) %>%
+  arrange(desc(obs_per_country))
+
+length(unique(obs_descr$country))
+
+```
+
+
+# Train/Test Split (1)
+```{r}
+library(caret)
+
+data_x <- data_21 %>%
+  select(-newconf)
+data_y <- data_21$newconf
+
+dim(data_x)
+length(data_y)
+
+# Test index
+set.seed(420)
+test_index <- createDataPartition(data_y, 
+                                  p = 0.25,
+                                  list = FALSE)
+
+test_index <- test_index %>% as.vector()
+
+# Train and test features
+test_x <- data_x[test_index,]
+train_x <- data_x[-test_index,]
+
+nrow(test_x)
+nrow(train_x)
+nrow(train_x)/nrow(test_x) # approx 4-1
+
+
+# Train and test outcomes
+test_y <- data_y[test_index]
+train_y <- data_y[-test_index]
+length(test_y)
+length(train_y)
+length(train_y)/length(test_y) # approx 4-1
+
+identical(nrow(train_x)/nrow(test_x),length(train_y)/length(test_y)) # same legnth for each.
+
+# train and test full
+train <- cbind(train_x, train_y) %>%
+  rename(newconf = train_y)
+test <- cbind(test_x, test_y) %>%
+  rename(newconf = test_y)
+
+# Descriptive data per observ split into train/test
+obs_descr_test <- obs_descr[test_index,]
+obs_descr_train <- obs_descr[-test_index,]
+```
+
+
+# Dealing with Class Imbalance
+
+__Random Sampling__
+```{r}
+library(caret)
+library(imbalance)
+library(performanceEstimation)
+library(ROSE)
+
+imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+
+
+oversamp_train_simp <- ovun.sample(newconf ~.,
+            data = train,
+            method = "over")
+
+oversamp_train_simp <- oversamp_train_simp$data
+
+table(oversamp_train_simp$newconf)
+
+sapply(oversamp_train_simp, function(x) sum(is.na(x))) # 0 missing values! 
+
+str(oversamp_train_simp)
+
+train <- oversamp_train_simp
+
+train_y <- oversamp_train_simp$newconf
+
+train_x <- oversamp_train_simp %>%
+  select(-newconf)
+
+imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+
+table(train$newconf)
+
+```
+
+__Random Sampling: Plotting vs. Old Data Distributions__
+```{r}
+library(imbalance)
+library(performanceEstimation)
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[1:3],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[4:6],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[7:9],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[10:12],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[13:15],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[16:18],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[19:21],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[22:24],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[25:27],
+               classAttr = "newconf")
+
+plotComparison(train, 
+               oversamp_train_simp, 
+               attrs = names(train)[28:31],
+               classAttr = "newconf")
+
+hist(oversamp_train_simp$democ)
+hist(oversamp_train_simp$autoc)
+
+```
+
+# Correlationary Checks
+```{r}
+
+correls <- cor(cbind(train_x %>%
+                                    mutate(state_fail = as.numeric(state_fail),
+                                           last_conf_2_yr = as.numeric(last_conf_2_yr),
+                                           last_conf_3_yr = as.numeric(last_conf_3_yr),
+                                           last_conf_5_yr = as.numeric(last_conf_5_yr),
+                                           last_conf_10_yr = as.numeric(last_conf_10_yr),
+                                           last_conf_20_yr = as.numeric(last_conf_20_yr),
+                                           neighbour_at_war = as.numeric(neighbour_at_war)), as.numeric(train_y)))
+
+correls
+```
+
+__SMOTE__
+```{r}
+# library(caret)
+# library(imbalance)
+# library(performanceEstimation)
+
+# imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+
+# table(train_y)
+
+# (6507-195)/195
+
+# table(train_y)[1]/table(train_y)[2]
+
+# ovrsamp_tr_SMOTE <- smote(newconf ~., 
+#                           data = train,
+#                           perc.over = 32.4,
+#                           k = 10,
+#                           perc.under = 0)
+
+# balanced train set
+# train_bal <- rbind(train,ovrsamp_tr_SMOTE)
+
+# table(train_bal$newconf)
+
+# sapply(train_bal, function(x) sum(is.na(x))) # 0 missing values! 
+
+# str(train_bal)
+
+# train_y <- train_bal$newconf
+
+# train_x <- train_bal %>%
+#   select(-newconf)
+
+# imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+
+# train_samp <- head(train_bal)
+
+# write.csv(train_samp, "train_head.csv")
+
+```
+
+
+__SMOTE: Plotting vs. Old Data Distributions__
+VERY IMPORTANT: AM I CREATING NON-FEASIBLE THROUGH K-means Sample generation?
+```{r}
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[1:3],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[4:6],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[7:9],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[10:12],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[13:15],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[16:18],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[19:21],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[22:24],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[25:27],
+#                classAttr = "newconf")
+
+# plotComparison(train, 
+#                train_bal, 
+#                attrs = names(train)[28:31],
+#                classAttr = "newconf")
+
+# hist(train_bal$democ)
+# hist(train_bal$autoc)
+```
+
+
+
+

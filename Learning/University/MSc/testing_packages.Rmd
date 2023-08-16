@@ -1,0 +1,422 @@
+---
+title: "Testing Packages"
+author: "Christy Coulson"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+# Load Test Data
+```{r message=TRUE, warning=FALSE}
+library(devtools)
+# remotes::install_git(url = "https://github.com/susanne-207/moc", branch = "moc_without_iml", subdir = "counterfactuals")
+# devtools::install_github("dandls/counterfactuals")
+# remotes::install_github("bgreenwell/fastshap")
+# install.packages('mosmafs')
+library(tidyverse)
+library(dslabs)
+library(ranger)
+library(torch)
+library(imbalance)
+library(caret)
+library(nnet)
+library(DMwR2)
+library(performanceEstimation)
+library(UBL)
+library(fastshap)
+
+
+data <- dslabs::brca
+
+length(data$y)
+
+nrow(data$x)
+ncol(data$x)
+
+table(data$y)
+
+```
+
+
+# Train/Test Split (1)
+```{r}
+
+data_x <- as.data.frame(data$x)
+data_y <- data$y
+
+# Test index
+set.seed(420)
+test_index <- createDataPartition(data_y, 
+                                  p = 0.2,
+                                  list = FALSE)
+
+test_index <- test_index %>% as.vector()
+
+# Train and test features
+test_x <- data_x[test_index,]
+train_x <- data_x[-test_index,]
+nrow(test_x)
+nrow(train_x)
+
+# Train and test outcomes
+
+test_y <- data_y[test_index]
+train_y <- data_y[-test_index]
+length(test_y)
+length(train_y)
+
+# train and test full
+train <- cbind(train_x, train_y)
+test <- cbind(test_x, test_y)
+
+test_x <- scale(test_x) %>%
+  as.data.frame()
+
+```
+# # Dealing with Class Imbalance (Random Selection)
+
+```{r}
+library(ROSE)
+
+imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+table(train$train_y)
+
+oversampled_train_simp <- ovun.sample(train_y ~.,
+            data = train,
+            method = "over")
+
+imbalanceRatio(oversampled_train_simp$data, classAttr = "train_y")
+
+oversampled_train_simp <- oversampled_train_simp$data
+
+table(oversampled_train_simp$train_y)
+
+plotComparison(train, 
+               rbind(train[train_y == "M",], oversampled_train_simp), 
+               attrs = names(train)[1:3],
+               classAttr = "train_y")
+
+# Not synthetic, just resampled. 
+
+```
+
+
+
+# Dealing with Class Imbalance (Synthetics)
+https://sci2s.ugr.es/sites/default/files/bbvasoftware/publications/Imbalance.pdf
+
+```{r}
+# Check imbalance
+imbalanceRatio(as.data.frame(train_y), classAttr = "train_y")
+table(train_y)
+table(train_y)[1]/table(train_y)[2]
+
+
+########## Try tomek links (undersampling)
+# not enough data to undersample. 
+Tomek <- TomekClassif(train_y ~ .,
+             dat = train,
+             dist = "Euclidean"
+            #  Cl = "all",
+            # rem = "both
+             ) 
+
+Tomek <- Tomek[[1]]
+
+table(Tomek$train_y)
+
+######### Try oversampling
+
+### MWMOTE
+## This emphasises those closer to decision boundary
+oversampled_train_MWMOTE <- mwmote(train,
+       numInstances = 116,
+       classAttr = "train_y")
+
+plotComparison(train, 
+               rbind(train, oversampled_train_MWMOTE), 
+               attrs = names(train)[1:3],
+               classAttr = "train_y")
+
+table(rbind(train$train_y[train_y == "B"], oversampled_train_MWMOTE$train_y)) # BALANCED
+
+
+### SMOTE
+
+oversampled_train_SMOTE <- smote(train_y ~., 
+                                        data = train,
+                                        perc.over = 0.69,
+                                        perc.under = 0)
+
+levels(train$train_y)
+
+plotComparison(train, 
+               rbind(train[train_y == "B",], oversampled_train_SMOTE), 
+               attrs = names(train)[1:3],
+               classAttr = "train_y")
+
+table(rbind(train$train_y[train_y == "B"],oversampled_train_SMOTE$train_y)) # BALANCED
+
+new_train <- rbind(train[train_y == "B",],oversampled_train_SMOTE)
+
+table(new_train$train_y) # Balanced - like all things should be.
+
+train_y <- new_train$train_y # does this really need to be ordered for fastshap?
+
+str(train_y)
+
+train_x <- new_train %>%
+  select(-train_y)
+
+train_x <- scale(train_x) %>%
+  as.data.frame()
+```
+
+
+
+# Train Neural Network with 1 Hidden Layer
+
+```{r}
+# Training Model
+control <- trainControl(method = "cv",
+                        number = 10,
+                        search = 'random'
+                        )
+
+# Random Search
+# nn_randomsearch <- train(x = train_x,
+#                        y = train_y,
+#                        method = 'nnet',
+#                        metric = "Accuracy",
+#                        tuneLength = 50,
+#                        trControl = control,
+#                        maxit=150
+#                        )
+
+# Best Model
+# max(nn_randomsearch$results$Accuracy, na.rm = TRUE)
+
+# nn_randomsearch$bestTune
+
+# Predict
+# nn_test_preds_1 <- predict(nn_randomsearch, test_x, type = "prob")
+
+# nn_test_preds_1 <- colnames(nn_test_preds_1)[max.col(nn_test_preds_1)]
+
+# confusionMatrix(factor(nn_test_preds_1), test_y) # OOS Accuracy : 0.9391 
+
+
+##### New modle without caret for Fastshap
+
+neural_net_tuned <- nnet(train_y ~ ., 
+                         data = cbind(train_x, train_y),
+                         size = 10,
+                         decay = 0.6310275,
+                         maxit = 250
+                         )
+
+nn_test_preds_2 <- factor(predict(neural_net_tuned, test_x, type = "class"))
+
+confusionMatrix(nn_test_preds_2, test_y) # OOS Accuracy : 0.9391 
+
+nn_test_preds_2 <- predict(neural_net_tuned, test_x, type = "raw") %>%
+  as.vector()
+
+```
+
+# Ranger (Random Forest)
+```{r}
+library(ranger)
+rf_rand <- ranger(train_y ~ ., data = cbind(train_x, train_y), probability = TRUE)
+
+rf_preds <- predict(rf_rand, train_x)$predictions
+
+# train_x[401,] has predicted probability of M of 0.42454603, closes to 0.5. Lets use that one.
+
+```
+
+
+# Generate Shapley Values
+
+```{r}
+# Prediction wrapper for `fastshap::explain()`; has to return a 
+# single (atomic) vector of predictions
+pfun <- function(object, newdata) {  # computes prob(Survived=1|x)
+  predict(object, data = newdata)$predictions[, 2]
+}
+
+# validating function
+rf_preds_test <- predict(rf_rand, cbind(train_x, train_y))$predictions[,2]
+
+# WORKS, now need to make NN work
+(shaps_ranger <- explain(rf_rand, X = train_x, nsim = 2, adjust = TRUE,  pred_wrapper = pfun))
+autoplot(shaps_ranger)
+
+
+################ Doesn't work as not in the same format
+################ Need to take outside of Caret 
+################  Its to do with the output of the pred_wrap function
+pfun_nn(neural_net_tuned, cbind(train_x, train_y))
+as.vector(predict(neural_net_tuned, cbind(train_x, train_y)))
+
+class(as.vector(predict(neural_net_tuned, train_x)))
+predict(neural_net_tuned, train_x)[1] 
+
+pred_wrapper <- function(model, newdata) {
+  predict(model, newdata = newdata, type = "raw")
+}
+
+packageVersion("fastshap")
+
+shaps_nn <- explain(neural_net_tuned, 
+                    pred_wrapper = pred_wrapper, 
+                    X = train_x,
+                    dnn = TRUE)
+
+# This package is rubbish. 
+
+```
+
+
+
+# Generate Counterfactuals
+
+```{r}
+library(mosmafs)
+library(counterfactuals)
+library(iml)
+
+# Setting up an iml::Predictor() object
+# We then create an iml::Predictor object, which serves as a wrapper for different model types; it contains the model and the data for its analysis.
+predictor <- Predictor$new(rf_rand, type = "response")
+
+# Select observation of interest
+x_interest <- cbind(train_x[401L, ], train_y[401L])
+
+train_y[401] # Predicted B but its actually M. 
+
+x_interest <- x_interest %>%
+  rename(train_y = `train_y[401L]`)
+
+class(x_interest)
+
+x_interest
+data_final[3449,]
+
+# For x_interest, the model predicts a probability of 8% for class versicolor.
+predictor$predict(x_interest)
+
+# Here, we want to apply MOC and since it is a classification task, we create a MOCClassif object.
+moc_classif <- MOCClassif$new(predictor)
+
+cfactuals <- moc_classif$find_counterfactuals(x_interest = x_interest,
+                                             desired_class = "M", 
+                                             desired_prob = c(0.6, 1))
+
+# This is a summary
+cfactuals
+
+# These are the counterfactuals 
+cfactuals$data
+
+# Can evaluate across a bunch of different metrics
+cfact_eval <- cfactuals$evaluate()
+
+cbind(cfact_eval, predict(rf_rand, cfact_eval[,1:30])$predictions[,2]) %>%
+  filter(V2 > 0.5) %>%
+  rename(new_prob = "V2")
+
+# dist_x_interest: The distance of a counterfactual to x_interest measured by Gower’s dissimilarity measure (Gower 1971).
+# dist_target: The absolute distance of the prediction for a counterfactual to the interval desired_outcome(regression tasks) or desired_prob(classification tasks).
+# no_changed: The number of feature changes w.r.t.x_interest.
+# dist_train:  The (weighted) distance to the k-nearest training data points measured by Gower’s dissimilarity measure (Gower 1971).
+# minimality:  The  number  of  changed  features  that  each  could  be  set  to  the  value  of x_interest while keeping the desired prediction value.
+
+cfactuals$plot_freq_of_feature_changes()
+
+cfactuals$plot_parallel()
+
+```
+
+
+
+# Data Imputation w/ missForest
+
+```{r}
+library(missForest)
+library(VIM)
+
+
+# Load sleep data from VIM package as example
+data(sleep, package = "VIM")
+print("before imputation")
+summary(sleep)
+
+# Perform imputation
+erg <- missForest(sleep)
+print("after imputation")
+summary(erg$ximp)
+```
+
+# Neural Net
+
+```{r}
+
+reticulate::conda_binary()
+
+library(keras)
+library(tensorflow)
+library(tidyverse)
+library(reticulate)
+
+reticulate::use_condaenv("/opt/homebrew/Caskroom/miniforge/base/envs/tf/bin/python")
+
+nn_model <- keras_model_sequential() %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 16, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+nn_model %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = "adam",
+  metrics = c("accuracy")
+)
+
+
+history <- nn_model %>% fit(
+  x = train_x,
+  y = as.numeric(train_y),
+  epochs = 100,
+  batch_size = 32,
+  validation_split = 0.2
+)
+
+reticulate::py_last_error()
+
+```
+
+
+
+
+# LSTM
+
+lookback = number of steps to use behind it to predict instance of interest. __(lookback == 57)__
+step = how many do we slice loopback into __(step == 1)__
+delay = The target delay (aka time delay) is an arbitrarily chosen number that introduces a delay between the inputs and the targets, thereby giving the network a few timesteps of future context, and it can be crucial as it makes robust to short distortions, especially when it is used with LSTM cells. In other words,  it is the number of frames that you will input to the RNN, until you start getting predictions from the output.
+batch size = A Batch Size in general refers refers to the Number of Training examples utilized per Iteration. A training step or an Epoch can be divided into many iterations based on the batch size. An Input training or test dataset, is first divided into many batches depending on the batch size and fed into the neural network. Once it has computed the result of a single batch, the network calculates its gradient and updates its weights.
+
+```{r}
+library(tensorflow)
+library(keras)
+
+?keras_model_sequential()
+?layer_flatten()
+
+test_model <- keras_model_sequential() 
+
+test_model %>%
+  layer_flatten()
+
+
+```
+
