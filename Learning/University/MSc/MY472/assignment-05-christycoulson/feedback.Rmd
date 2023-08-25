@@ -1,0 +1,29 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Feedback and grades
+
+This file will contain feedback to your submission and the points assigned to each exercise.
+
+| Exercise | Grade | Feedback |
+| --- | --- | --- |
+| 1   | 23/23    |
+| 2.1 | 1/1    |
+| 2.2 | 2/2     |
+| 2.3 | 5/5    |
+| 2.4 | 3/3     |
+| 2.5 | 3/3    |
+| 2.6 | 1/4     | Your earliest and latest tweets are reversed (earliest is latest and vice versa) -- but your earliest should be from May 26th and the latest from June 8th
+| 2.7 | 5/5    |
+| 2.8 | 2/7     | Correct calculations but needed to be done using SQL 
+| 2.9 | 5/5    |
+| 3.1 | 1.5/1.5    |
+| 3.2 | 1.5/1.5	  |
+| 3.3 | 9/9	| Really excellent job here with the network plots, you had a clear sense of what you wanted to investigate but started broadly at first -- your explanation is thorough and informed.
+| 4   | 22/30	| Wonderful job explaining what you were going to do and with what data from the outset. Try to be clear on your variables -- what does YoY population growth represent? You could have a table that is all of the geographic information instead of repeating country name and abbreviation/code across all the tables in 1 and 2. Overall really great job with combining all of this conflict data and it would be so interesting to see your analysis if you were to ever use this at some point!
+
+
+| Total | 84/100 |

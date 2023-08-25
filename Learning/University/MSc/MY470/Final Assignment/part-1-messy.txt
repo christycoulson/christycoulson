@@ -1,0 +1,196 @@
+# Calculating Observed No. of teams per no. of cheaters
+
+# load cheaters data 
+def load_cheaters(string):
+    with open(string) as c:
+        ch = c.readlines()
+        cheaters = [i.split('\t', 1)[0] for i in ch]
+    return cheaters
+
+cheaters = load_cheaters('../assignment-final-data/cheaters.txt')
+# I should modularise this to a function later for extra marks.  
+
+# Load teams data
+def load_teams(string):
+    with open(string) as t:
+        tm = t.readlines()
+        teams = [i.split('\t') for i in tm]
+        teams = sorted(teams, key=lambda x: x[0])
+    return teams
+
+teams = load_teams('../assignment-final-data/team_ids.txt')
+# I should modularise this to a function later for extra marks.  
+
+def add_cheater_dummy(list_of_lists):
+    for i in range(len(list_of_lists)):
+        if teams[i][1] in cheaters:
+            teams[i].append(1)
+        else:
+            teams[i].append(0)
+
+add_cheater_dummy(teams)
+
+def calc_cheaters_per_matchteam(list_of_lists):
+    
+    match_team_cheaters_dic = {}
+    for list_in_lists in list_of_lists:
+        match_id, _, team_id, cheater_dummy = list_in_lists
+        key = (match_id, team_id)
+        if key in match_team_cheaters_dic:
+            match_team_cheaters_dic[key] += cheater_dummy
+        else:
+            match_team_cheaters_dic[key] = cheater_dummy
+    return match_team_cheaters_dic
+
+match_team_cheaters_dic = calc_cheaters_per_matchteam(teams)
+
+def get_no_cheaters(dic):
+    actual_cheaters_list = []
+    for i in 0,1,2,3,4:
+        actual_cheaters_list.append(list(dic.values()).count(i))
+    return actual_cheaters_list
+
+actual_cheaters_list = get_no_cheaters(match_team_cheaters_dic)
+
+print("There are", actual_cheaters_list[0],"observed instances of 0 cheaters in a team.")
+print("There are", actual_cheaters_list[1],"observed instances of 1 cheater in a team.")
+print("There are", actual_cheaters_list[2],"observed instances of 2 cheaters in a team.")
+print("There are", actual_cheaters_list[3],"observed instances of 3 cheaters in a team.")
+print("There are", actual_cheaters_list[4],"observed instances of 4 cheaters in a team.")
+
+cheaters_pt = list()
+
+def get_teams_per_cheaters(list_of_lists):
+    '''fill in docstring'''
+    cheaters_per_team = []
+    
+    ls = []
+    for i in range(len(list_of_lists)):
+        ls.append(list_of_lists[i][0:3:2])
+
+    match_team_ids = {i[0]:[] for i in ls}
+
+    for i, j in ls:
+        match_team_ids[i].append(j)
+
+    for key in match_team_ids: 
+        # randomly shuffle the values for each key 
+        random.shuffle(match_team_ids[key]) 
+
+    result = []
+    # create edge_pairs of match_id and team_id in 1-1 pairs
+    for key, values in match_team_ids.items():
+        for value in values:
+            result.append([key, value])
+
+# function to add player_id and cheater_dummy back into shuffled teams list of lists
+    for i in range(len(result)):
+        result[i].append(teams[i][3])
+        result[i].append(teams[i][1])
+
+    # allocate to new_team alias
+    new_teams = result
+
+    cheaters_random_dic = {}
+    for list_in_lists in new_teams:
+        match_id, team_id, cheater_dummy, _, = list_in_lists
+        key = (match_id, team_id)
+        if key in cheaters_random_dic:
+            cheaters_random_dic[key] += cheater_dummy
+        else:
+            cheaters_random_dic[key] = cheater_dummy
+
+    cheaters_count_list = []
+    for i in 0,1,2,3,4:
+        cheaters_count_list.append(list(cheaters_random_dic.values()).count(i))
+    
+    cheaters_per_team.append(cheaters_count_list)
+    
+    return cheaters_per_team
+
+cheaters_pt = []
+for i in range(20):
+        cheaters_pt.append(get_teams_per_cheaters(teams))
+        
+def get_cheaters_per_match_team(list_of_lists):
+    '''FILL IN DOCSTRING'''
+    import statistics as stats
+    zero_cheaters = []
+    one_cheater = []
+    two_cheaters = []
+    three_cheaters = []
+    four_cheaters = []
+
+    for sublist in list_of_lists:
+        for sub_sublist in sublist:
+            zero_cheaters.append(sub_sublist[0])
+            one_cheater.append(sub_sublist[1])
+            two_cheaters.append(sub_sublist[2])
+            three_cheaters.append(sub_sublist[3])
+            four_cheaters.append(sub_sublist[4])
+
+    return zero_cheaters, one_cheater, two_cheaters, three_cheaters, four_cheaters
+
+cheaters = get_cheaters_per_match_team(cheaters_pt)
+
+def get_stats(ls):
+    '''Function takes a list as input and returns the mean, standard deviation,
+    and 95% confidence interval for the mean.'''
+    import statistics as stats
+
+    temp_list = []
+    
+    mean = stats.mean(ls)
+    temp_list.append(mean)
+    stand_dev = stats.stdev(ls)
+    temp_list.append(stand_dev)
+    ci_lower = mean - 1.96 * stand_dev / math.sqrt(len(ls))
+    temp_list.append(ci_lower)
+    ci_higher = mean + 1.96 * stand_dev / math.sqrt(len(ls))
+    temp_list.append(ci_higher)
+    
+    return temp_list
+
+zero_cheaters_stats = get_stats(cheaters[0])
+one_cheater_stats = get_stats(cheaters[1])
+two_cheaters_stats = get_stats(cheaters[2])
+three_cheaters_stats = get_stats(cheaters[3])
+four_cheaters_stats = get_stats(cheaters[4])
+
+print("There is an expected count of", zero_cheaters_stats[0], 
+      "instances of 0 cheaters in a team, with a lower 95% confidence interval of", 
+      zero_cheaters_stats[2], "and an upper 95% confidence interval of", 
+      zero_cheaters_stats[3],".") 
+
+print("There is an expected count of", one_cheater_stats[0], 
+      "instances of 1 cheaters in a team, with a lower 95% confidence interval of", 
+      one_cheater_stats[2], "and an upper 95% confidence interval of", 
+      one_cheater_stats[3],".") 
+
+print("There is an expected count of", two_cheaters_stats[0], 
+      "instances of 2 cheaters in a team, with a lower 95% confidence interval of", 
+      two_cheaters_stats[2], "and an upper 95% confidence interval of", 
+      two_cheaters_stats[3],".") 
+
+print("There is an expected count of", three_cheaters_stats[0], 
+      "instances of 3 cheaters in a team, with a lower 95% confidence interval of", 
+      three_cheaters_stats[2], "and an upper 95% confidence interval of", 
+      three_cheaters_stats[3],".") 
+
+print("There is an expected count of", four_cheaters_stats[0], 
+      "instances of 4 cheaters in a team, with a lower 95% confidence interval of", 
+      four_cheaters_stats[2], "and an upper 95% confidence interval of", 
+      four_cheaters_stats[3],".") 
+
+__Part 1: Conclusions__
+
+The function of this analysis is to test whether cheaters tend to team up together. 
+In this case, the randomisation of teams 20 times acts as the null hypothesis against which our observed values have been tested. 
+This null hypothesis is that cheaters do not tend to team up with each other. 
+We are only able to reject the null hypothesis if the counts for the number of teams with 2, 3, and 4 cheaters on a team exceed
+the upper confidence interval of the expected counts. 
+
+We can conclude that __yes, cheaters do tend to team up__ 
+as we observe more teams with 2, 3 and 4 cheaters than expected under the null hypothesis at a statistical significance level of 0.05. 
+For example, we expect between 33.45 and 36 teams with 2 cheaters in them, but we observe 182. 
+We expect less than 1 team with 3 or 4 cheaters on it, but observe 9 and 2 teams. 

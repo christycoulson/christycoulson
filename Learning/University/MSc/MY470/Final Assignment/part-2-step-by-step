@@ -1,0 +1,156 @@
+kills = Load.load_all_sorted_date('../assignment-final-data/kills.txt')
+cheaters = Load.load_first_two_lines('../assignment-final-data/cheaters.txt')
+
+cheat_date_dic = wrangle.get_dict(cheaters)
+
+kill_cheat = wrangle.add_dummies(kills, cheat_date_dic)
+
+# Calculate number of observed instances of victim becoming a cheater after being killed by a cheater.
+
+part_2_observed_count = calculations.count_1(kill_cheat, 6)
+
+print("There are", part_2_observed_count, "instances of a victim becoming a cheater after being killed by a cheater.")
+
+match_killer_ids = wrangle.get_dict_mult_values(kill_cheat)
+match_victim_ids = wrangle.get_dict_mult_values_2(kill_cheat)
+match_ids = match_killer_ids.keys()  
+
+total_players = {}
+for k in match_ids:
+      total_players[k] = list(set(match_killer_ids[k] + match_victim_ids[k]))
+      
+def get_random_v2c(list_of_lists):
+    '''Fill in this docstring'''
+    
+    lol = list_of_lists
+     # 1. Dictionary with Match_id & killer_id
+    ls = []
+
+    for i in range(len(lol)):
+        ls.append(lol[i][0:2:1])
+
+    match_killer_ids = {i[0]:[] for i in ls}
+
+    for i, j in ls:
+        match_killer_ids[i].append(j)
+        
+    # 2. Dictionary with Match_id & victim_id
+
+    ls = []
+
+    for i in range(len(lol)):
+        ls.append(lol[i][0:3:2])
+
+    match_victim_ids = {i[0]:[] for i in ls}
+
+    for i, j in ls:
+        match_victim_ids[i].append(j)
+        
+    match_ids = match_killer_ids.keys()  
+    total_players = {}
+    total_players_ref = {}
+    
+    for k in match_ids:
+        total_players[k] = list(set(match_killer_ids[k] + match_victim_ids[k]))
+
+    for k in match_ids:
+        total_players_ref[k] = list(set(match_killer_ids[k] + match_victim_ids[k]))
+        random.shuffle(total_players_ref[k])
+    
+    new_killers = []
+    new_victims = []
+
+    for match in total_players.keys():
+
+        kills_per_this_match = len(match_killer_ids[match])
+        killer_ids = list(set(match_killer_ids[match]))
+        victim_ids = list(set(match_victim_ids[match]))
+        total_players_per_match = total_players[match]
+        
+        for i in range(kills_per_this_match):
+            killer = random.choice(killer_ids)
+            victim = random.choice(victim_ids)
+            
+            if killer != victim:
+                victim_ids.remove(victim)
+                total_players_per_match.remove(victim)
+                
+            else:
+                victim = random.choice(total_players_per_match)
+                
+            new_killers.append(killer)
+            new_victims.append(victim)
+        
+    for i in range(len(kill_cheat)):
+        lol[i][1] = new_killers[i]
+        lol[i][2] = new_victims[i]
+        
+    rand_kills = []
+
+    for i in range(len(list_of_lists)):
+        rand_kills.append([lol[i][0], new_killers[i], new_victims[i], lol[i][3]])
+        
+      # 2. Create dummy variable for if killer was a cheater at the time of the kill
+    rand_kill_cheat = []
+
+    for k in rand_kills:
+        # Unpack kill for legibility
+        match_id, killer_id, victim_id, kill_time = k
+        is_killer_cheater_at_time = 0 
+        is_victim_cheater = 0
+        vict_become_cheater_after = 0
+        # First, establish whether killer was a cheater during time of kill
+        if killer_id in cheat_date_dic and cheat_date_dic[killer_id] <= kill_time:
+            is_killer_cheater_at_time = 1 
+        # Second, establish whether victim became a cheater at any point AFTER being killed
+        if victim_id in cheat_date_dic and cheat_date_dic[victim_id] > kill_time:
+            is_victim_cheater = 1   
+        # Third, establish whether victim became a cheater at any point AFTER being killed by a cheater
+        if is_killer_cheater_at_time == 1 and is_victim_cheater == 1:
+            vict_become_cheater_after = 1
+
+        rand_kill_cheat.append([match_id, killer_id, victim_id, kill_time, is_killer_cheater_at_time, 
+                        is_victim_cheater, vict_become_cheater_after])
+        
+    part_2_random_count = (sum(i[6] == 1 for i in rand_kill_cheat))
+    
+    return part_2_random_count
+  
+  part_2_random = []
+
+for i in range(20):
+        kill_cheat = []
+        
+        for k in kills:
+                # Unpack kill for legibility
+                match_id, killer_id, victim_id, kill_time = k
+                is_killer_cheater_at_time = 0 
+                is_victim_cheater = 0
+                vict_become_cheater_after = 0
+                # First, establish whether killer was a cheater during time of kill
+                if killer_id in cheat_date_dic and cheat_date_dic[killer_id] <= kill_time:
+                        is_killer_cheater_at_time = 1 
+                # Second, establish whether victim became a cheater at any point AFTER being killed
+                if victim_id in cheat_date_dic and cheat_date_dic[victim_id] > kill_time:
+                        is_victim_cheater = 1   
+                # Third, establish whether victim became a cheater at any point AFTER being killed by a cheater
+                if is_killer_cheater_at_time == 1 and is_victim_cheater == 1:
+                        vict_become_cheater_after = 1
+
+                kill_cheat.append([match_id, killer_id, victim_id, kill_time, is_killer_cheater_at_time, 
+                                is_victim_cheater, vict_become_cheater_after])
+        
+        part_2_random.append(get_random_v2c(kill_cheat))
+
+def get_stats_list(list):
+    '''This function take a list of numerical values as an argument and returns a list of the 
+    mean, standard deviation, upper confidence interval, and lower confidence interval'''
+    expected_val = statistics.mean(list)
+    sd = statistics.stdev(list)
+    upper_ci = expected_val + 1.96 * sd / math.sqrt(len(list))
+    lower_ci = expected_val - 1.96 * sd / math.sqrt(len(list))
+    stats = [expected_val, sd, upper_ci, lower_ci]
+    return stats
+
+part_2_stats = get_stats_list(part_2_random)
+print(part_2_stats)

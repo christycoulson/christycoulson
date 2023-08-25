@@ -1,0 +1,21 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Feedback and grades
+
+This file will contain feedback to your submission and the points assigned to each exercise.
+
+| Exercise | Grade | Feedback |
+| --- | --- | --- |
+| 1 | 4/4 |
+| 2 | 11/15 | Interesting analysis of basic vs luxury good inflation. The first sentence "This analysis will seek to understand the relative impact of inflation on wealth inequality in the U.K. from October 2019 to November 2022." is a bit of an oversell - it is not obvious that analysing prices changes in four goods from each category is analysing "wealth inequality". Other than the necklaces, goods here will also often be bought from income, so a distinction between income and wealth inequality would be helpful. Try to clearly state what a project can and particularly cannot answer. And also without the spin of wealth inequality, this is a very good answer.
+| 3 | 7/10 | Very good replication. Some differences that still exist are e.g. the headline which does not start on the left, some font sizes, distances between legend items, no logo or arrow
+| 4 | 6.5/7 | Description column not renamed
+| 5 | 21/25 | Very good and thorough analysis given the possible scope of such an assignment. Good embedding of Wikipedia content. Interesting findings on lagged reporting by the media as well as the very limited contemporaneous discussion of topics. While abstracts have been used here, in some years additional information might be found in lead paragraphs and snippets (although in others these mainly contain the same content as the abstracts). Still some numbers and fragments in word cloud.
+| 6 | 9/9 |
+| 7 | 22/25 | Outstanding answer. This would easily be at the level of the start of a master's dissertation. In particular the analysis on stop and search is very insightful. To combine this data with further data on socio-economics, e.g. from an additional API in the context of this exercise, would have been great and can be a topic for further research.
+| Readability and formatting | 5/5 | Very well formatted. The answer in Exercise 2 would even be slightly easier to read with less text and more condensed information.
+| Total | 85.5/100 |

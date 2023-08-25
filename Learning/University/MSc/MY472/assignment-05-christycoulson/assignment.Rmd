@@ -1,0 +1,999 @@
+---
+title: "MY472 - Assignment 5"
+output: html_document
+---
+
+__Exercise 1. (23 points)__
+
+In this exercise, you will build a database containing political tweets from the time of the 2017 UK General Election campaign. The tweet data can be downloaded from this dropbox [link](https://www.dropbox.com/sh/ktl1a3672yl6te0/AAA2At9pSt9hZ-KsaT0Mwbp2a?dl=0). The files contain tweets from candidates and parties, and replies to these accounts.
+
+Note that the files in the dropbox link are compressed. Information on candidates, parties and associated Twitter accounts can be found in "candidate_information.csv" in the repo. This e.g. allows you to find out which tweets and users belong to politicians/parties and which ones are replies from other users, but the file also contains other information.
+
+There are 113 tar.gz files in the dropbox folder containing JSON files with both tweets and user information. All files have to be processed into a relational database (use `DBI` with `SQLite` to create and query this database). There can be several strategies to read the files into R, one is to use the `readtext` function from the `readtext` package which can read compressed files directly (hint: you should also check out the `source` argument in this function which has an option tailored directly to Twitter data).
+
+The goal is to separate the fields in the JSON documents containing tweet and user information into two tables of a relational database. You can name these tables `tweets` and `users`. Before you write the tables into your database, you can process the tweet data with `dplyr` or other packages. Make sure that there are no duplicates among the users and tweets in the final database (i.e. the tweet id is **unique** in the `tweets` table, and the user id is **unique** in `users` table). Also make sure that these two tables can be combined afterwards using a column common to the tables. Please also add one indicator column (i.e. either TRUE/FALSE or 1/0) to each of your tables, in detail:
+
+- A column "screen_name_in" in the `users` table indicating whether an account is among the politician/party accounts
+- A column "in_reply_to_screen_name_in" in the `tweets` table indicating whether a tweet was a reply to a politician/party account
+
+(Hint: You can use the file "candidate_information.csv" to determine which users and tweets are from the politicians/parties and which ones are not)
+
+Make sure that the two final tables in the database contain only one suitable merging column and no unnecessary duplicated information.
+
+1.1 Create a relational `SQLite` database containing the two tables `users` and `tweets`. Once the database has been created, use SQL queries to:
+
+1.2 Print out the total number of rows of each table.
+
+1.3 Print out all column names of each table.
+
+1.4 Print out the first five rows of each table.
+
+1.5 Print out the first five rows of the joined table.
+
+Then disconnect again from your database (in the next exercise we will use a different database).
+
+__Important note:__ Please store the files with tweets and your database outside this repo. We will grade the knitted HTML document and do not require these large files. Furthermore, processing the files will take some time, so it is normal that knitting the final document takes time. Do not load data from interim steps but make sure your code fully creates a database in Exercise 1 from the `ge2017` folder when knitting.
+
+```{r}
+suppressMessages(library("tidyverse")) 
+library(DBI)
+library(RSQLite)
+library(readtext)
+library(quanteda)
+library(quanteda.textplots)
+library(quanteda.textstats)
+library(janitor)
+library(readxl)
+```
+
+```{r}
+# Create Database here 
+db <- dbConnect(RSQLite::SQLite(), "~/Documents/Projects/ASDS/GitHub/MSc-ASDS-22/MY472/Assignments/assignment-05-christycoulson-data/assignment-05-db.sqlite")
+
+```
+
+__Only user_id_str and user_created_at are unique to user (one-to-one). All other field values are dependent on the time at which the tweet associated with that observation was made. Fields such as screen_name, followers_count, etc. can all change over time. user_id_str and user_created_at are the only two variables that have a one-to-one relationship and are unique for users, so only they can be included in the users table otherwise we will be omitting information when enforcing uniqueness by user_id_str. As a result, I intend to format my database to reduce information omission as much as possible. Thus, most of my time-specific data will be in the tweets table and I will use the users table to connect users who might have multiple screen_name values over time. However, it might be wise to enrich our users table to include broad statistics associated with the users. In this case, I will focus on the maximum number of friends, followers and statuses that a single user_id_str accumulated in our sample. The primary key for the users table is user_id. This exists as a foreign key in the tweets table. The primary key for the tweets table is tweet_id. However, the tweets table joins with the users table via the user_id field. When joins are made to combine these tables, it is important that the user joins both tables via the 'user_id' field.__
+
+```{r}
+candidate_information <- read_csv("./candidate_information.csv")
+
+original <- readtext("/Users/christycoulson/Downloads/ge2017", source = "twitter")
+
+# First, let's isolate the user information.
+
+# Only user_id_str and user_created_at are unique to user (one-to-one). All other field values are dependent on the time at which the tweet associated with that observation was made. Fields such as screen_name, followers_count, etc. can all change over time. user_id_str and user_created_at are the only two variables that have a one-to-one relationship and are unique for users, so only they can be included in the users table otherwise we will be omitting information when enforcing uniqueness by user_id_str. 
+
+# As a result, I intend to format my database to reduce information omission as much as possible. Thus, most of my time-specific data will be in the tweets table and I will use the users table to connect users who might have multiple screen_name values over time. 
+
+# First, I'll include screen_name to check whether the user is a politician.
+# Then, I'll have to remove screen_name as it changes over time and will make user_id non-unique in final table.
+# get user_id, user_created_at and screen_name. screen_name to query relative to candidate_information
+
+users <- original %>% 
+  select(user_id_str, user_created_at, screen_name) %>% 
+  distinct()
+  
+# Inner join to find screen_name in both data frames. Create column screen_name_in
+users_politicians <- users %>% inner_join(candidate_information, by=c("screen_name" = "screenName")) %>%
+  select(user_id_str, user_created_at, screen_name) %>%
+  mutate(screen_name_in = 1)
+
+# Check uniqueness
+users_politicians %>%
+  group_by(user_id_str) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  head()
+
+# left join to add screen_name_in column to 'users'
+users <- users %>% left_join(users_politicians, by = c("screen_name" = "screen_name", 
+                                                       "user_id_str" = "user_id_str", 
+                                                       "user_created_at" = "user_created_at")) 
+
+# Change NA values for screen_name_in column to 0.
+users$screen_name_in[is.na(users$screen_name_in) == TRUE] <- 0
+
+# remove screen name, get distinct. Arrange by user_id_str for visual checking.
+users <- users %>% select(-screen_name) %>% distinct() %>%
+  arrange(user_id_str)
+
+# Users Uniqueness checks
+users %>%
+  group_by(user_id_str) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  head()
+
+# identified user_id_str == '2591323712' as user with one screen_name in the politicians table and one not in it. This is a # great example of why I need to retain screen_name in the tweets section, as we risk omitting this information if we just # choose most recent screen_name. 
+
+users %>%
+  filter(user_id_str == '2591323712')
+
+# Removing single row where one users' screen_name was associated with politician and that same user has a screen_name with no politician associated.
+
+which(users$user_id_str == '2591323712' & users$screen_name_in == 0)
+
+# Remove row with 0 as user_id_str is associated with politician.
+users <- users[-32671,]
+
+users %>%
+  group_by(user_id_str,user_created_at) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) # user_id_str now unique.
+
+# Now, I want to retain all of the time specific information in the tweets table. However, it might be wise to enrich our 
+# users table to include broad statistics associated with the users. In this case, I will focus on the maximum number of 
+# friends, followers and statuses that a single user_id_str accumulated in our sample. 
+
+# Get max statuses per user_id_str
+status_max <- original %>%
+  arrange(desc(statuses_count)) %>%
+  group_by(user_id_str, user_created_at) %>%
+  slice(1) %>%
+  select(user_id_str, user_created_at, statuses_count) %>%
+  rename(max_statuses = statuses_count)
+
+# Get max followers per user_id_str
+followers_max <- original %>%
+  arrange(desc(followers_count)) %>%
+  group_by(user_id_str, user_created_at) %>%
+  slice(1) %>%
+  select(user_id_str, user_created_at, followers_count) %>%
+  rename(max_followers = followers_count)
+
+# Get max friends per user_id_str
+friends_max <- original %>%
+  arrange(desc(followers_count)) %>%
+  group_by(user_id_str, user_created_at) %>%
+  slice(1) %>%
+  select(user_id_str, user_created_at, friends_count) %>%
+  rename(max_friends = friends_count)
+
+# Now, I need to join each file to my users table. 
+users <- users %>% 
+  left_join(status_max, by = c( "user_id_str" = "user_id_str", "user_created_at" = "user_created_at")) %>%
+  left_join(followers_max, by = c( "user_id_str" = "user_id_str", "user_created_at" = "user_created_at")) %>%
+  left_join(friends_max, by = c( "user_id_str" = "user_id_str", "user_created_at" = "user_created_at"))
+
+users <- users %>%
+  rename(user_id = user_id_str)
+
+users <- data.frame(users)
+
+```
+
+```{r}
+# Write Users Table into DB instance
+dbWriteTable(db, "users", users, overwrite = TRUE)
+# The primary key for the users table is user_id. This exists as a foreign key in the tweets table. 
+```
+
+
+```{r}
+# Next, we need to isolate all of the tweet-specific information, which basically contains all of the other information. We need to keep user_id_str as we are required to join on this field. 
+
+# Doc_id is actually more unique than id_str (tweet_id), but tweets are unique to id_str,so I will use that variable as my primary key for tweets.
+
+tweets <- original %>%
+  select(-doc_id) %>%
+  distinct()
+
+# First, let's use the same method as prior to identify whether the tweet was in response to a politician. 
+tweet_replies_politicians <- tweets %>% inner_join(candidate_information, by=c("in_reply_to_screen_name" = "screenName")) %>%
+  select(id_str, user_id_str, in_reply_to_screen_name) %>%
+  mutate(in_reply_to_screen_name_in = 1)
+
+tweets <- tweets %>% 
+  left_join(tweet_replies_politicians, by = c("id_str" = "id_str", 
+                                              "user_id_str" = "user_id_str",
+                                              "in_reply_to_screen_name" = "in_reply_to_screen_name")) %>% distinct()
+
+# Convert NA values to 0.
+tweets$in_reply_to_screen_name_in[is.na(tweets$in_reply_to_screen_name_in) == TRUE] <- 0
+
+# Checking Uniqueness
+tweets %>%
+  group_by(id_str) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  head()
+
+tweets %>%
+  group_by(id_str) %>%
+  summarise(count = n()) %>%
+  filter(count > 1) %>%
+  summarise(no_duplicates_id_str = n())
+
+# Now, we need to remove superfluous columns. This information will be omitted for a few main reasons. The first is that 
+# there is no variability whatsoever in the values and thus the data is non-descriptive and not substantively useful. 
+# The fields that have been omitted for that reasons are:
+# favorited, truncated, retweeted, protected, place_type, lat, lon.
+# Other fields contain superfluous information, as they either describe the data collection process or user information.
+# doc_id & user_created_at. 
+
+tweets <- tweets %>%
+  select(-favorited, -truncated, -retweeted, -protected, -place_type, -lat, -lon, -user_created_at) 
+
+# The tweets table now has 35 columns, all containing useful information concerning the tweets in the sample.
+
+# rename id columns to be more user friendly and for non-specialists to read the data.
+tweets <- tweets %>% 
+  rename(tweet_id = id_str, user_id = user_id_str)
+
+tweets <- data.frame(tweets)
+```
+
+```{r}
+# Write Tweets table to the database.
+dbWriteTable(db, "tweets", tweets, overwrite = TRUE)
+
+# The primary key for the tweets table is tweet_id. However, the tweets table joins with the users table via the user_id field. When joins are made to combine these tables, it is important that the user joins both tables via the 'user_id' field.
+```
+
+__1.2 Print out the total number of rows of each table.__
+__There are 91256 users and 221680 tweets.__
+```{r}
+dbGetQuery(db, 
+           "SELECT COUNT(*) AS NumberofUsers
+           FROM users")
+
+dbGetQuery(db, 
+           "SELECT COUNT(*) AS NumberofTweets
+           FROM tweets")
+
+```
+
+__1.3 Print out all column names of each table.__
+```{r}
+dbListFields(db, "users")
+
+
+dbListFields(db, "tweets")
+```
+
+__1.4 Print out the first five rows of each table.__
+```{r}
+dbGetQuery(db, 
+           "SELECT * 
+           FROM users
+           LIMIT 5")
+
+
+dbGetQuery(db, 
+           "SELECT * 
+           FROM tweets
+           LIMIT 5")
+
+```
+
+__1.5 Print out the first five rows of the joined table.__
+```{r}
+dbGetQuery(db, 
+           "SELECT * 
+           FROM tweets t JOIN users u
+           ON t.user_id = u.user_id
+           LIMIT 5")
+
+dbDisconnect(db)
+```
+
+
+__Exercise 2. (35 points)__
+
+__Important note:__ In this exercise __do not__ use your previous database. Instead use the database `uk_election_tweets_small.sqlite` which is supplied in the assignment repo! Answer questions 2.1 - 2.9 using __SQL syntax only__ (sending SQL statements through R is fine, no need to change chunk types).
+
+Connect to `uk_election_tweets_small.sqlite`:
+```{r}
+db_2 <- dbConnect(RSQLite::SQLite(), "uk_election_tweets_small.sqlite")
+
+dbListFields(db_2, "tweets")
+dbListFields(db_2, "users")
+
+```
+
+2.1 How many tweets are in the `tweets` table? How many users in the `users` table? (1 point)
+
+
+__Answer: There are 22130 tweets in the 'tweets' table and 5572 users in the 'users' table.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT COUNT(*) AS NumberofTweets
+           FROM tweets")
+
+dbGetQuery(db_2, 
+           "SELECT COUNT(*) AS NumberofUsers
+           FROM users")
+```
+
+2.2 How many tweets are replies to politicians/parties? How many accounts are from politicians/parties, how many from other users? (2 points)
+
+
+__Answer: 1829 tweets are replies to politicians/parties. There are 1055 accounts from politicians/parties and 4517 accounts that are from other users.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT COUNT(*) AS NumberofTweets, in_reply_to_screen_name_in
+           FROM tweets
+           GROUP BY in_reply_to_screen_name_in")
+
+dbGetQuery(db_2, 
+           "SELECT COUNT(*) AS NumberofUsers_Politicians
+           FROM users
+           WHERE screen_name_in = 1
+           ")
+
+dbGetQuery(db_2, 
+           "SELECT COUNT(*) AS NumberofUsers 
+           FROM users
+           WHERE screen_name_in = 0
+           ")
+```
+
+2.3 Which screen_name has posted the highest count of tweets? (5 points)
+
+__Answer: The screen_name 'DrTeckKhong' has posted the highest count of tweets, with 149 tweets.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT COUNT(id_str) AS NumberofTweets, users.screen_name
+            FROM users JOIN tweets
+            ON users.user_id_str = tweets.user_id_str
+            GROUP BY users.screen_name
+            ORDER BY COUNT(id_str) DESC
+            LIMIT 5
+           ")
+```
+
+2.4 Who has the highest number of followers? (3 points)
+
+__Answer: The user with id 20204789 and screen_name 'RufusHound' has the highest number of followers, with 1205426 followers.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT followers_count, screen_name, user_id_str
+            FROM users 
+            ORDER BY followers_count DESC
+            LIMIT 3
+           ")
+```
+
+2.5 Among politicians, who has the highest number of followers? (3 points)
+
+__Answer: user 117777690, with screen_name 'jeremycorbyn' has the highest number of followers amongst politicians, with 968629 followers.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT followers_count, screen_name, user_id_str
+            FROM users 
+            WHERE screen_name_in = 1
+            ORDER BY followers_count DESC
+            LIMIT 3
+           ")
+```
+
+
+2.6 Which tweet has the earliest timestamp in the data? Which the latest? (4 points)
+
+__Answer: The earliest tweet has id_str '870429796395823105' with timestamp 'Fri Jun 02 00:00:09 +0000 2017' by user_id_str '2673148399'. In contrast, the latest tweet has id_str '870022069949431808' with timestamp 'Wed May 31 21:00:00 +0000 2017' by user_id_str '580947925'.__
+```{r}
+dbGetQuery(db_2, 
+           "SELECT *
+           FROM tweets
+           ORDER BY created_at
+           LIMIT 3")
+
+dbGetQuery(db_2, 
+           "SELECT *
+           FROM tweets
+           ORDER BY created_at DESC
+           LIMIT 3")
+```
+
+2.7 Which were the top ten accounts which received most replies and how many replies did their tweets get? (5 points)
+
+__Answer: The top ten accounts which received the most replies were:__
+
+
+1. user_id_str = 14281853, screen_name = Conservatives, replies = 507,
+2. user_id_str = 117777690, screen_name =	jeremycorbyn, replies = 368,
+3. user_id_str = 747807250819981312, screen_name = theresa_may, replies = 237,
+4. user_id_str = 3131144855, screen_name = BorisJohnson, replies = 173,
+5. user_id_str = 14291684, screen_name =	UKLabour, replies = 50,
+6. user_id_str = 112398730, screen_name = Jeremy_Hunt, replies = 36,
+7. user_id_str = 153810216, screen_name = HackneyAbbott, replies = 36,
+8. user_id_str = 77821953, screen_name = theSNP, replies = 27,
+9. user_id_str = 15710120, screen_name =	MichelleDewbs, replies = 24,
+10. user_id_str = 18020612, screen_name = DavidLammy, replies = 23.
+
+__Interestingly, despite being the most replied to account, Conservatives (14281853) does not appear in the users table as a twitter user, and just exists in our db as a user who has been replied to.__
+```{r}
+
+dbGetQuery(db_2, 
+           "SELECT count(in_reply_to_user_id_str) AS Count, in_reply_to_user_id_str, in_reply_to_screen_name
+           FROM tweets
+           GROUP BY in_reply_to_user_id_str, in_reply_to_screen_name
+           ORDER BY Count DESC 
+           LIMIT 10
+           ")
+
+dbGetQuery(db_2, 
+           "SELECT *
+            FROM users
+            WHERE screen_name = 'Conservatives'
+           ")
+
+dbGetQuery(db_2, 
+           "SELECT *
+            FROM users
+            ORDER BY followers_count DESC
+            LIMIT 5
+           ")
+```
+
+2.8 How many tweets contained the word brexit? What proportion of tweets by only politicians contained the word brexit, what proportion of tweets by other users? (7 points)
+
+
+__Answer: There were 1058 tweets that contained the word brexit. 566 of 12034 tweets by politicians contained the word, which constituted approximately 4.70% of total tweets by politicians. 492 of 10096 tweets by non-politicians contained the word 'brexit,' which constituted approximately 4.87% of total tweets by non-politicians. This is interesting, as it seems that brexit is used in-tweet more often (although marginally) by non-politicians than by politicians.__
+```{r}
+# Due to the nature of the word 'brexit' and the fact it might be in phrases such as 'Brexiteer,' I've chosen to include all mentions of brexit, with '%brexit%'. This is because I believe a tweet is relevant to Brexit whether it simply has the word 'Brexit' in it or 'Brexiteer'. It is important that the queries we make are substantively relevant and I believe them both to be amongst political scientists. 
+
+
+# 1058 tweets related to brexit. SQL-lite is not case sensitive so no need to capitalise.
+dbGetQuery(db_2, 
+           "SELECT COUNT(*)
+            FROM tweets
+            WHERE text LIKE '%brexit%'
+            ")
+
+# 566 tweets by politicians contained the phrase 'brexit'
+dbGetQuery(db_2, 
+           "SELECT COUNT(t.id_str) AS NumberofTweets
+            FROM users u JOIN tweets t
+            ON u.user_id_str = t.user_id_str
+            WHERE t.text LIKE '%brexit%' AND u.screen_name_in = 1
+           ")
+
+# 12034 tweets by politicians in total
+dbGetQuery(db_2, 
+           "SELECT COUNT(t.id_str) AS NumberofTweets
+            FROM users u JOIN tweets t
+            ON u.user_id_str = t.user_id_str
+            WHERE u.screen_name_in = 1
+           ")
+
+566/12034 # 0.04703341
+
+# 492 tweets by non-politicians contained the phrase 'brexit'.
+dbGetQuery(db_2, 
+           "SELECT COUNT(t.id_str) AS NumberofTweets
+            FROM users u JOIN tweets t
+            ON u.user_id_str = t.user_id_str
+            WHERE t.text LIKE '%brexit%' AND u.screen_name_in = 0
+            ORDER BY COUNT(id_str) DESC
+           ")
+
+# 10096 tweets by non-politicians.
+dbGetQuery(db_2, 
+           "SELECT COUNT(t.id_str) AS NumberofTweets
+            FROM users u JOIN tweets t
+            ON u.user_id_str = t.user_id_str
+            WHERE u.screen_name_in = 0
+           ")
+
+492/10096 # 0.04873217
+```
+
+2.9 How many tweets have geolocation information (lat or lon value)? It is good to keep in mind how small this number is and that it can bias outcomes of studies as these tweets are not representative of all other tweets. (5 points)
+
+__Answer: There are no tweets associated with users where there is a non-NA value in the lat or lon fields. However, there are tweets associated with place_lon and place_lat values. There are 769 tweets by users with a place_lat or place_lon values. This constitutes only 3.47% of total tweets. Thus, any analysis based on this sample would be prone to lack of representativeness and misleading parameters.__
+
+```{r}
+
+# no lon values
+dbGetQuery(db_2, 
+           "SELECT lon
+            FROM users 
+            WHERE lon IS NOT NULL
+           ")
+
+# no lat values
+dbGetQuery(db_2, 
+           "SELECT lat
+            FROM users 
+            WHERE lat IS NOT NULL
+           ")
+
+# All tweets where place_lat or place_lon populated for users. 
+dbGetQuery(db_2, 
+           "SELECT COUNT(t.id_str) AS NumberofTweets
+            FROM users u JOIN tweets t
+            ON u.user_id_str = t.user_id_str
+            WHERE u.place_lat IS NOT NULL OR u.place_lon IS NOT NULL
+           ")
+
+# 769 TWEETS WHERE u.place_lat IS NOT NULL OR u.place_lon IS NOT NULL
+769/22130
+```
+
+__Exercise 3. (12 points)__
+
+We can analyse Twitter hashtags and account mentions well with quanteda. Read https://quanteda.io/articles/pkgdown/examples/twitter.html and answer the following questions. Obtain the relevant data from the database `uk_election_tweets_small.sqlite` with a SQL query here and answer all questions 3.1 - 3.3 afterwards with `quanteda` rather than SQL.
+
+```{r}
+tweets_1 <- dbGetQuery(db_2, 
+           "SELECT text
+           FROM tweets
+           ")
+
+# Convert to Corpus
+tweets_corpus <- corpus(tweets_1)
+
+# Convert corpus to dfm
+tweet_dfm <- tokens(tweets_corpus, remove_punct = TRUE) %>%
+    dfm()
+
+```
+
+3.1 What are the top 10 popular hashtags? (1.5 points)
+
+__Answer: The ten most popular hashtags are:__
+
+1. # ge2017 
+2. #forthemany
+3. #votelabour
+4. #battlefornumber10
+5. #bbcdebate
+6. #votesnp
+7. #ge17
+8. #labourdoorstep
+9. #bbcqt
+10. #votelibdem
+
+
+```{r}
+hashtag_dfm <- dfm_select(tweet_dfm, pattern = "#*")
+
+top_hashtags <- names(topfeatures(hashtag_dfm, 100))
+
+head(top_hashtags, 10)
+```
+
+3.2 Who was mentioned (i.e. ‘@name’) the most in tweets? (1.5 points)
+
+__Answer:The most mentioned person was @jeremycorbyn.__
+
+```{r}
+users_mentioned_dfm <- dfm_select(tweet_dfm, pattern = "@*")
+
+top_mentioned_users <- names(topfeatures(users_mentioned_dfm, 100))
+
+head(top_mentioned_users,10)
+```
+
+3.3 Choose a small number of hashtags or accounts that could be interesting to analyse (e.g. about one topic or a group of politicians). Visualise how these hashtags or user mentions are related in a network with [textplot_network](https://quanteda.io/reference/textplot_network.html) from `quanteda`. What do you find? (9 points)
+
+```{r}
+hashtag_fcm <- fcm(hashtag_dfm)
+users_fcm <- fcm(users_mentioned_dfm)
+
+# First, a broad network textplot to better understand
+hashtag_fcm <- fcm(hashtag_dfm)
+head(hashtag_fcm)
+top_hashtags_fcm <- fcm_select(hashtag_fcm, pattern = top_hashtags[1:25])
+textplot_network(top_hashtags_fcm, min_freq = 0.1, edge_color = "orange", edge_alpha = 0.8, edge_size = 5)
+
+# Jeremy Corbyn
+jc_tweets <-  tweets_1$text %>%
+   str_subset(pattern = "@jeremycorbyn")
+
+jc_toks <- jc_tweets %>%
+    tokens(remove_punct = TRUE) %>%
+    tokens_tolower() %>%
+    tokens_remove(pattern = stopwords("english"), padding = FALSE)
+
+fcm_jc <- fcm(jc_toks, context = "window", tri = FALSE)
+jc_feat <- names(topfeatures(fcm_jc, 25))
+fcm_select(fcm_jc, pattern = jc_feat) %>%
+    textplot_network(min_freq = 50, edge_color = "orange", edge_alpha = 0.8, edge_size = 5)
+
+# #forthemany
+
+ftm_tweets <-  tweets_1$text %>%
+   str_subset(pattern = "#forthemany")
+
+ftm_toks <- ftm_tweets %>%
+    tokens(remove_punct = TRUE) %>%
+    tokens_tolower() %>%
+    tokens_remove(pattern = stopwords("english"), padding = FALSE)
+
+fcm_ftm <- fcm(ftm_toks, context = "window", tri = FALSE)
+ftm_feat <- names(topfeatures(fcm_ftm, 25))
+fcm_select(fcm_ftm, pattern = ftm_feat) %>%
+    textplot_network(min_freq = 1, edge_color = "orange", edge_alpha = 0.8, edge_size = 5)
+
+# #coalitionofchaos
+
+coc_tweets <-  tweets_1$text %>%
+   str_subset(pattern = "#coalitionofchaos")
+
+coc_toks <- coc_tweets %>%
+    tokens(remove_punct = TRUE) %>%
+    tokens_tolower() %>%
+    tokens_remove(pattern = stopwords("english"), padding = FALSE)
+
+fcm_coc <- fcm(coc_toks, context = "window", tri = FALSE)
+coc_feat <- names(topfeatures(fcm_coc, 25))
+fcm_select(fcm_coc, pattern = coc_feat) %>%
+    textplot_network(min_freq = 2, edge_color = "orange", edge_alpha = 0.8, edge_size = 5)
+
+# #labourdoorstep
+
+lds_tweets <-  tweets_1$text %>%
+   str_subset(pattern = "#labourdoorstep")
+
+lds_toks <- lds_tweets %>%
+    tokens(remove_punct = TRUE) %>%
+    tokens_tolower() %>%
+    tokens_remove(pattern = stopwords("english"), padding = FALSE)
+
+fcm_lds <- fcm(lds_toks, context = "window", tri = FALSE)
+lds_feat <- names(topfeatures(fcm_lds, 25))
+fcm_select(fcm_lds, pattern = lds_feat) %>%
+    textplot_network(min_freq = 2, edge_color = "orange", edge_alpha = 0.8, edge_size = 5)
+
+dbDisconnect(db_2)
+```
+__Answer: This hashtag and user network analysis will focus on the Labour Party, its motifs during the 2017 general election, Jeremy Corbyn, it's leader at the time, and the Labour Doorstep app, an app which facilitated sharing of grassroots campaign activism for the Labour party. I chose these hashtags due to a large sample, as prior exploratory data analysis indicated to me that textplotting of SNP-based information will not be suitably robust due to limited sample size.__
+
+__The first thing to note is that as data becomes more sparse (from @jeremycorbyn to #labourdoorstep), the connections seem to be less specific to the focal network node. For @jeremycorbyn, the key phrases, hashtags and users seem to revolve around plans for the future. This is likely due to being a non-incumbent competitor, and thus those who mentioned Corbyn didn't focus on discussing his track record. As expected, there are a lot of 'call to arms' words used, such as 'today,' '#forthemany,' 'need,' and 'build.' Typically, those who mentioned Corbyn used positive language. This interacts with mentions of '#bbcdebate' and 'debate,' where it was noted that Corbyn performed particularly well and boosted his poll weighting as a result. Policy items such as 'police' and 'security' still remain relevant despite being surrounded by positive language.__ 
+
+__Both #forthemany and #coalitionofchaos were slogans used by Labour to 1. mobilise a voting base, akin to Obama's 2008 campaign, and 2. Highlight the perceived ineptitude of May's coalition government. This second point is in direction contrast to the Conservatives 'Strong and Stable' motif that was repeatedly heard during 2017. #forthemany and #coalitionofchaos are similar in that they exist in a discourse that seems to balance both positive and negative sentiment. Both phrases are loaded to imply that the incumbent Conservative government has failed to government effectively and seems to benefit on a small economic, cultural and political elite at the expense of 'ordinary' britons. This dichotomy is captured in our text plots as words such as 'build' and 'great' coincide with words such as 'squabbling,' 'whacked,' and 'rich.' Labour's 2017 campaign has been noted to have had clear messaging around redistribution of economic and political power whilst criticising the government's agenda to maintain such hierarchies. These textplots reflect this. I think a very interesting line of future research inquiry might be to perform topic modelling and sentiment analysis around labour and conservative slogans. This would require additional data collection as the Conservative motifs' are not adequately represented in our dataset.__
+
+__Finally, I want to briefly talk about the #labourdoorstep hashtag. This app helps track and organise grassroots activism for Labour, which reminded me of Obama's 2008 mobilisation strategy. The first thing that jumps out at me here is the clear sentiment. Words such as 'thanks,' 'support,' 'fantastic,' 'strong,' 'great,' 'team' and 'campaign' were central and frequent. Now, it's likely that those who used the #labourdoorstep hashtag were ingratiated in Labour's election campaign and so this hashtag provides us a means of comparison between those actively involved in grassroots election campagining and the rest of the population. The language is more focused, positive, and socially-oriented from an organisation perspective. This control over language and resulting cohesiveness and clarity is likely a product of training around desired messaging. I'm not aware of the Conservative party having an equivalent to the #labourdoorstep app, but if one was to emerge over the coming years then the study of the hashtag's use could give us considerable insight into how campaigns maintain cohesion from the bottom-up when engaged in country-wide electoral battles.__
+
+__Exercise 4. (30 points)__
+
+In this open-ended exercise, the task is to study building an own database from multiple data sources which stores data on a topic you are interested in. You can e.g. download data with your browser (using APIs has no impact on the grade in this exercise) from data sources mentioned in previous assignments such as the [World Bank](https://data.worldbank.org/), [World Health Organization](https://www.who.int/data/gho), [St. Louis Federal Reserve](https://fred.stlouisfed.org/), [Our World in Data](https://ourworldindata.org/), and/or the [World Inequality Database](https://wid.world/data/). After downloading the data, reshape and process it with R packages such as `dplyr`, and then store the final tables in an `SQLite` database. This database should contain at least 2 tables.
+
+More extensive, thought out, polished, and complex databases that combine data from different sources will receive higher marks here. Note, however, that the database should not be unnecessarily complex. For example, it would not make sense to store each economic indicator time-series in a separate table of a database. Rather, data should conceptually be bundled in tables. Also make sure not to repeat any unnecessary duplicate information in different tables of the database (e.g. in a hypothetical university database with a `students` and an `exams` table, both tables contain a `studentid` column but - because the tables can be joined via this column whenever necessary - the `exams` table does not repeat the student email addresses and other student information which is already stored in the `students` table).
+
+If the final database is large, you can simply store it (and load it from) outside of the repository since we will grade the knitted HTML file. Database files can be uploaded to GitHub, however, note that if the database is large, GitHub push/pulls will be slower.
+
+Download and process the data, then store it in the final `SQLite` database. Describe in markdown text why you structured the database the way you did. Then use SQL queries to:
+
+1. Print out the total number of rows for each table in your database. Print out the column names for each table.
+
+2. Print out the first 10 rows for each table. 
+
+3. Show whether all tables in the database can be (directly or indirectly) joined with SQL queries. Print out the first 5 rows of the joined tables.
+
+
+__Answer: For Exercise 4, I will extract, transform and load data concerning conflict and political violence into a new database. My first table will use the country-year dyad as the primary key. It will contain data on national-level characteristics of a nation-state in a given year. My second table will concern instances of civil war onset per country-year. My third table will contain instances of domestic terrorism, derived from the University of Maryland's 'Global Terrorism Database.' Finally, I will create a table that will show the number of foreign military interventions in a country per year. With these tables, a researcher can study the interaction between conflict events at different levels (from sub-national to transnational) and better understand which determinants are most powerful in predicting political violence events. I will deal with each table one at a time and describe how each connects to each other as I layer in more.__
+
+```{r}
+# Create Database
+ex_4_db <- dbConnect(RSQLite::SQLite(), "~/Documents/Projects/ASDS/GitHub/MSc-ASDS-22/MY472/Assignments/assignment-05-christycoulson-data/assignment-05-ex-4-db.sqlite")
+
+```
+
+```{r}
+###### These are the Correlates of War Country Codes. I will use these to standardise this connecting field.
+COW_CC <- read_csv("~/Documents/Projects/ASDS/Conflict Prediction/Data/COW Country Codes.csv")
+
+COW_CC <- COW_CC %>% rename(country_code = CCode, Country = StateNme, Country_Abb = StateAbb)
+
+###### This data is from the Polity5 project, which measures regime characteristics and level of democracy for polities in a given year. This will be the base for my first table, titled 'Country_Year_Demographics.'
+Polity5 <- read_excel("~/Documents/Projects/ASDS/Conflict Prediction/Data/Polity5 1776-2018.xls")
+
+Polity5 <- Polity5 %>% select(country, cyear, scode, ccode, year, democ, autoc, polity) %>%
+  rename(Country = country, polity_score = polity, democ_score = democ, autoc_score = autoc, country_code = ccode, 
+         country_year = cyear, country_abbr = scode)
+
+Country_Year_Demographics <- Polity5
+
+###### This data was taken from the Correlates of War 'World Religion Dataset.' It contains the number of people in differing religious groups per country-year.
+Religion <- read_csv("~/Documents/Projects/ASDS/Conflict Prediction/Data/World Religion National Dataset 1945-2010.csv")
+
+Religion <- Religion %>% select(year, state, chrstgen, judgen, islmsun, islmshi, islmgen, budgen, zorogen, hindgen, sikhgen, shntgen, bahgen, taogen, jaingen, confgen, syncgen, anmgen,nonrelig,othrgen)
+
+Country_Year_Demographics <- Country_Year_Demographics %>% left_join(Religion, by = c("country_code" = "state", "year" = "year")) 
+
+####### This data was taken from the World Bank and concerns the total population per country-year between the ages of 15-29. It comes in wide format and requires significant wrangling to get into a structure that suits us. 
+WB_15_29 <- read_csv("~/Documents/Projects/ASDS/Conflict Prediction/Data/World Bank Male pop 15-29 1960-2050.csv")
+
+# Make column names first 4 characters to isolate years
+names(WB_15_29) <- substring(names(WB_15_29), 1, 4) 
+
+# clean names with janitor package
+WB_15_29 <- janitor::clean_names(WB_15_29) 
+# remove first character generated for years by janitor
+names(WB_15_29) <- substring(names(WB_15_29), 2, 5) 
+
+WB_15_29 <- WB_15_29 %>% select(-eri_) # remove excess field
+WB_15_29 <- WB_15_29 %>% rename(Country = oun, Country_Code = oun_, Type = eri) # rename columns
+
+# Now, ready for gathering
+
+WB_15_29 <- WB_15_29 %>%
+  gather(year, figure, '1960':'2050')
+
+WB_15_29$figure <- as.numeric(WB_15_29$figure)
+
+young_men_totals <- as.data.frame(WB_15_29 %>%  
+  filter(Type %in% c("Population ages 15-19, male", 'Population ages 20-24, male', 'Population ages 25-29, male')) %>%
+  group_by(Country, Country_Code, year) %>%
+  summarise(figure = sum(figure))) # Generate total 15-29 number
+
+population_totals <- as.data.frame(WB_15_29 %>% 
+  filter(Type == 'Population, total') %>%
+  group_by(Country, Country_Code, year) %>%
+  summarise(figure = sum(figure))) # Generate total pop number per country-year
+
+young_men_population_totals <- left_join(young_men_totals, population_totals, by = c("Country" = "Country", "Country_Code" = "Country_Code", "year" = "year"))
+
+young_men_population_totals <- young_men_population_totals %>% rename(young_men_population = figure.x, total_population = figure.y)
+
+young_men_population_totals <- young_men_population_totals %>%
+  mutate(percentage_young_men = young_men_population/total_population)
+
+young_men_population_totals$year <- as.double(young_men_population_totals$year)
+
+young_men_population_totals <- young_men_population_totals %>%
+  select(-Country)
+
+Country_Year_Demographics <- Country_Year_Demographics %>% left_join(young_men_population_totals, by = c("country_abbr" = "Country_Code", "year" = "year")) 
+
+
+###### This data is taken from the World Bank, and contains YoY population growth figures.
+pop_growth <- read_csv("~/Documents/Projects/ASDS/Conflict Prediction/Data/Population Growth 1960-2005.csv")
+
+names(pop_growth) <- substring(names(pop_growth), 1, 4) # Make column names first 4 charactrs to isolate years
+pop_growth <- janitor::clean_names(pop_growth) # clean names
+names(pop_growth) <- substring(names(pop_growth), 2, 5) # remove first character generated for years by janitor
+
+pop_growth <- pop_growth %>% select(-eri_, -oun) # remove excess field
+pop_growth <- pop_growth %>% rename(Country_Code = oun_, Type = eri) # rename columns
+
+pop_growth <- pop_growth %>%
+  filter(Type == 'Population growth (annual %)')
+
+pop_growth_tidy <- pop_growth %>%
+  gather(year, figure, '1960':'2050') %>%
+  rename(pop_growth_YoY = figure) %>%
+  select(-Type)
+
+# make double for joining
+pop_growth_tidy$year <- as.double(pop_growth_tidy$year)
+
+Country_Year_Demographics <- Country_Year_Demographics %>% left_join(pop_growth_tidy, by = c("country_abbr" = "Country_Code", "year" = "year")) %>% 
+  arrange(desc(chrstgen))
+
+head(Country_Year_Demographics)
+
+```
+
+```{r}
+# Write Table 1 to DB 
+dbWriteTable(ex_4_db, "Country_Year_Demographics", Country_Year_Demographics, overwrite = TRUE)
+
+```
+
+__Table 1: Country-Year Characteristics__
+
+__In my first table, I have included a number of variables that have been theorised to have had an impact on the propensity for conflict in a given nation at a given time. The potential list of variables to be added here is extensive, but these demographic variables have a multi-decade history of being associated with the probability of conflict occurring. First, I include the country name, year, and two different kind of country codes for joins to different datasets. Next, I include the democracy and autocracy score from Polity5, alongside the overall Polity score for that country-year dyad. Following this, I added the number of people per country-year in each religious group. However, this data is only collected every 5 years. I have not performed calculations to fill in missing data as I want to allow the researchers with the necessary flexibility to justify their own process for dealing with missing data. My suggestion would be to lag numbers and aggregate over every 5 year period as populations are typically fairly statistic. However, this substantive justification means that 'events' that drastically affect a country's religious distribution would be ignored. My next fields show the percentage of the population that are male and between 15-29. Finally, I have YoY population growth. The most unique field, and thus the primary key if one was to count instances in this data - is the country_year field. However, all joins are performed on a combination of a country indicator, either 'country_code' or 'country_abbr' and year.__
+
+
+Data Points:
+
+Country-year data = Country to year (5 fields)
+
+Level of Democracy = democ_score, autoc_score and polity_score (3 fields)
+
+Religious fractionalisation = chrstgen to othrgen (18 fields)
+
+% population male and 15-29 years old = young_men_population, total_population & percentage_young_men (3 fields)
+
+YoY population growth = pop_growth_YoY (1 field)
+
+
+__I use the Correlates of War country-codes to act as a connector between these disparate data sources. I  add Polity (regime characteristics) data from the Polity5 project, which can be reviewed here: https://www.systemicpeace.org/polityproject.html. These fields act as the base for my first table. I have included national religious characteristics, taken from the Correlates of War project, so that a researcher might explore religous heterogeneity and its impact on conflict. I have population data on the proportion of the population that are male and between the ages of 15-29, and these individuals have been evidenced to be more easily mobilised in conflict due to either greed or grievance. Finally, I will include YoY population growth to facilitate exploring whether rapidly changing populations are more prone to conflict. For my next table, I will look at instances of civil war onset.__
+
+
+```{r}
+cw_onset <- read_csv("~/Documents/Projects/ASDS/Conflict Prediction/Data/ucdp-intrastate-country-level-onset-dataset.csv")
+
+Civil_War_Onset <- cw_onset %>%
+  rename(country_abbr = abc, Country = name, new_conflict = newconf) %>%
+  select(-conflict_ids)
+
+head(Civil_War_Onset)
+```
+
+
+```{r}
+# Write Table 2 to DB 
+dbWriteTable(ex_4_db, "Civil_War_Onset", Civil_War_Onset, overwrite = TRUE)
+
+```
+__Table 2: Civil War Onset__
+
+__This table will contain instances of civil war onset, by country-year. Civil War is here defined as a conflict between state and non-state actors within a given country that resulted in at least 25 battle deaths that year. This means that if there was a civil war that _BEGUN_ in this year, it will be counted. This data is taken from the Uppsala Conflict Data Program (UCDP), and is thus in fairly clean format. I simply need to rename  and remove a few superfluous fields and I'm ready to write this table to my db. This table contains both country and year. It also contains whether a new civil conflict occurred during this year. The gwno field has been kept here for scaleability. This field allows joining with other UCDP data sets and so I have retained it in case I want to expand my database structure in the future. The 'onset' fields are logical and have a value of 1 if it has been at least the number of years shown in the column name since the last civil conflict. year_prev shows the previous year where a civil conflict occurred in this country. This table facilitates time-series analysis as these columns can be used to better understand how periods of peace mgith impact the propensity for future conflict.__
+
+
+Data Points:
+
+country/year info = country_abbr to year (3 fields)
+
+superfluous connector for other UCDP data = gwno_a (1 field)
+
+Indicator for new conflict this country-year = new_conflict (1 field)
+
+years since last civil war onset = onset1 to onset20 (6 fields)
+
+year of previous civil conflict = year_prev (1 field)
+
+__This table connects to my main Country_Year_Demographics table by Country_Year_Demographics.country_abbr = Civil_War_Onset.country_abbr AND Country_Year_Demographics.year = Civil_War_Onset.year. __
+
+
+```{r, message=FALSE, warning=FALSE}
+Terrorism <- read_excel("~/Documents/Projects/ASDS/Conflict Prediction/Data/Global_Terrorism_Database_September_23.xlsx")
+
+Terrorism %>%
+  filter(country == natlty1) %>%
+  summarise(domestic_terrorism_attacks = n()) # 185507 domestic terrorist attacks
+
+# Domestic terrorism, as a subset of terrorism more generally, is conducted within the geospatial boundaries of a given state and is engaged in against a citizen or property of said country. 
+
+Domestic_Terrorism <- Terrorism %>%
+  filter(country == natlty1) 
+
+Domestic_Terrorism <- Domestic_Terrorism %>%
+  select(eventid, iyear, imonth, iday, country, country_txt, region_txt, latitude, longitude, location,
+         attacktype1_txt, targtype1_txt, targsubtype1_txt, target1, natlty1_txt) %>%
+  rename(terrorism_event_id = eventid, year = iyear, month = imonth, day = iday, Country_Code = country, Country = country_txt, Region = region_txt, attack_type = attacktype1_txt, target_type = targtype1_txt, subtarget_type = targsubtype1_txt, target = target1, target_nationality = natlty1_txt )
+
+head(Domestic_Terrorism)
+
+```
+
+
+```{r}
+# Write Table 3 to DB 
+dbWriteTable(ex_4_db, "Domestic_Terrorism", Domestic_Terrorism, overwrite = TRUE)
+```
+
+__Table 3: Domestic Terrorism__
+
+__My third table concerns incidences of domestic terrorism. Domestic Terrorism is here defined in accordance with the 'Global Terrorism Database,' by START. The definition has a number of conditions, and thus can be found here: https://www.start.umd.edu/gtd/downloads/Codebook.pdf. This data operates at the sub-national and daily level and thus there can be many occurrences per country-year dyad. This facilitates more granular analysis, which is a growing trend in conflict studies. In this table, I include the eventid, the year, month and day, the Country_Code (to be joined with Country_Year_Demographics) and Region. I also include latitude and longitude data so that researchers can operationalise distance from events for analysis. Finally, I include attack type and target information. This can be grouped accordingly to analyse which types of events occur most. The Domestic Terrorism table joins with my main table, the Country_Year_Demographics on Country_Year_Demographics.country_code = Domestic_Terrorism.Country_Code AND Country_Year_Demographics.year = Domestic_Terrorism.year. There is a one-to-many relationship between each row of my base table, Country_Year_Demographics, and the Domestic_Terrorism table.__
+
+```{r}
+IMI_1947_2005 <- read_excel("~/Documents/Projects/ASDS/Conflict Prediction/Data/IMI-1947-2005.xls")
+
+# First, need to separate target and intervener data so that we can transform around targets to operationalise measurement of magnitude of intervention in target-country-year. 
+
+IMI <- left_join(IMI_1947_2005, COW_CC, by = c("intervener" = "country_code")) %>% view()
+IMI <- IMI %>% rename(Intervener_Country_Code = Country_Abb, Intervener_Country = Country)
+
+IMI <- IMI %>% left_join(COW_CC, by = c("target" = "country_code"))
+IMI <- IMI %>% rename(Intervention_Target_Country_Code = Country_Abb, Intervention_Target_Country = Country)
+
+IMI <- IMI %>% mutate(startyear = as.numeric(substr(start,1,4)), endyear = as.numeric(substr(IMI$end,1,4)))
+
+IMI <- IMI %>%
+ group_by(Intervention_Target_Country_Code, Intervention_Target_Country, startyear) %>%
+ summarise(no_of_intervening_countries = n()) %>%
+ arrange(desc(no_of_intervening_countries))
+
+```
+
+
+```{r}
+# Write Table 4 to DB.
+dbWriteTable(ex_4_db, "IMI", IMI, overwrite = TRUE)
+
+```
+
+_Table 4: International Foreign Military Interventions per Target Country-Year__
+
+__This table contains the number of foreign military interventions per target country from 1947 to 2005. It was taken from the International Military Interventions database. The definition for an international foreign military intervention can be found here: https://www.jstor.org/stable/25654438. This data can be examined relative to country-year demographics, instances of civil war onset and incidences of domestic terrorism to see if interventions are more likely to occur in differing conditions. In this table, i include the intervention target country name and country code. I also include the startyear of said interventions and the number of interventions by foreign powers during said year. no_of_intervening countries is 0 or a positive integer, and can be used to examine magnitude of foreign interventions. For example, Iraq in 2003 saw 34 foreign powers engage in a foreign military intervention within their borders, the highest in our database. This table joins with my main table via Country_Year_Demographics.country_abbr = IMI.Intervention_Target_Country_Code AND Country_Year_Demographics.year = IMI.startyear. Now, I will query my database using SQLite to demonstrate joins, structures and data.__
+
+
+__1. Print out the total number of rows for each table in your database. Print out the column names for each table.__
+
+```{r}
+# Column Names
+dbListFields(ex_4_db, "Country_Year_Demographics")
+dbListFields(ex_4_db, "Civil_War_Onset")
+dbListFields(ex_4_db, "Domestic_Terrorism")
+dbListFields(ex_4_db, "IMI")
+
+
+# Number of Rows
+dbGetQuery(ex_4_db, 
+           "SELECT COUNT(*) AS NumberofRows_Country_Year_Demographics
+            FROM Country_Year_Demographics
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT COUNT(*) AS NumberofRows_Civil_War_Onset
+            FROM Civil_War_Onset
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT COUNT(*) AS NumberofRows_Domestic_Terrorism
+            FROM Domestic_Terrorism
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT COUNT(*) AS NumberofRows_IMI
+            FROM IMI
+           ")
+
+```
+
+
+__2. Print out the first 10 rows for each table.__ 
+
+```{r}
+
+# First 10 Rows
+dbGetQuery(ex_4_db, 
+           "SELECT *
+            FROM Country_Year_Demographics
+            LIMIT 10
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT *
+            FROM Civil_War_Onset
+            LIMIT 10
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT *
+            FROM Domestic_Terrorism
+            LIMIT 10
+           ")
+
+dbGetQuery(ex_4_db, 
+           "SELECT *
+            FROM IMI
+            LIMIT 10
+           ")
+
+```
+
+
+__3. Show whether all tables in the database can be (directly or indirectly) joined with SQL queries. Print out the first 5 rows of the joined tables.__
+
+```{r}
+# Join to demonstrate how tables interact with each other.
+dbGetQuery(ex_4_db, 
+           "SELECT *
+            FROM Country_Year_Demographics cyd
+            LEFT JOIN Civil_War_Onset cw
+            ON cyd.country_abbr = cw.country_abbr AND cyd.year = cw.year
+            LEFT JOIN Domestic_Terrorism dt
+            ON cyd.country_code = dt.Country_Code AND cyd.year = dt.year
+            LEFT JOIN IMI mi
+            ON cyd.country_abbr = mi.Intervention_Target_Country_Code AND cyd.year = mi.startyear
+            LIMIT 5
+           ")
+```
+
+__Final Note__
+
+__To summarise, I want to discuss a key limitation of this data, availability. Each dataset has differing temporal coverage. Thus, it's important to state this limitation below. For each dataset used, I will define the temporal boundaries of data coverage below.__
+
+Polity5 - From 1800 until 2018. 
+
+Religion - From 1945 to 2010.
+
+Male Population % aged 15-29 - 1960 until 2050 predictions.
+
+Population Growth - 1960 to 2007. 
+
+Civil War Onset - 1946 to 2017.
+
+Domestic Terrorism - 1970 to 2020.
+
+International Foreign Military Interventions - 1947 to 2005.
+
+__As mentioned prior, I haven't transformed data to fill in missing data because of the substantive impact this might have on theory testing. Instead, I will allow the researcher to use prior empirics and theory to determine how best to proceed for each research endevour. I have worked to omit any superfluous variables from the initial datasets whilst retaining any where value variability might add an analytical quality.This balancing act is crucial to the logic behind my database structure, which I hope I've demonstrated.__
+__
